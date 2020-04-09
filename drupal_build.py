@@ -19,9 +19,9 @@ import os
 import sys
 import signal
 
-import subprocess
+# import subprocess
 
-# import tempfile
+import tempfile
 
 import re
 
@@ -38,6 +38,14 @@ DFILE = "drupal-{}.tar.gz"
 DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
 
+releasea = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
+
+# 9.0.0-beta2
+# 5 4 3    21
+# 7.0-unstable-10 not supported
+# 7.0-alpha7
+drerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dmrerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 
 class OnBreak():
   kill_now = False
@@ -55,31 +63,86 @@ class OnBreak():
 def zeroOnNone(x):
   return int(x) if x is not None else 0
 
-
-def getVersion(repo, refilter):
-  for ref in g.ls_remote(repo).split('\n'):
-    dmatch = re.search(refilter, ref)
-    if(dmatch is not None):
-      va = [ zeroOnNone(dmatch.group(6)),
-          zeroOnNone(releasea[dmatch.group(5)]),
-          zeroOnNone(dmatch.group(4)),
-          zeroOnNone(dmatch.group(3)),
-          zeroOnNone(dmatch.group(2))]
-      v = va[0] + 100 * va[1] + 100 ** 2 * va[2] + 100 ** 3 * va[3] + 100 ** 4 * va[4]
-      a[dmatch.group(1)] = (v, va)
-  vl = sorted(a.items(), key=lambda kv:(kv[1][0]))
-  return vl
-
-def createWorkingDir(workdir):
-  if workdir is None:
-    pass
-  else:
-    return "use temp" 
-  
-
 class Drupal():
-  pass
+  def __init__(self, workdir):
+    self.workdir = workdir
+    self.http = None
 
+  def gitFilter(self, vl):
+    if(base is not None):
+      vl = [v for v in vl if (v[1][0] >= base * 100 ** 4 and v[1][0] < (base + 1) * 100 ** 4)]
+    vl = [v for v in vl if (v[1][1][1] >= releasea[release])]
+    return vl
+
+  def createDirs(self, base):
+    os.makedirs(os.path.join(base, "core"), exist_ok=True)
+    os.makedirs(os.path.join(base, "modules"), exist_ok=True)
+    os.makedirs(os.path.join(base, "themes"), exist_ok=True)
+    return base
+
+  def createWorkingDir(self):
+    if self.workdir is None:
+      self.workdir = tempfile.mkdtemp(prefix="drupal_")
+      self.createDirs(self.workdir)
+    else:
+      self.workdir = os.path.join(base, "drupal")
+      os.makedirs(self.workdir, exist_ok=True)
+      self.createDirs(self.workdir)
+
+  def getVersion(self, repo, refilter):
+    a = {}
+    va = []
+    for ref in g.ls_remote(repo).split('\n'):
+      dmatch = re.search(refilter, ref)
+      if(dmatch is not None):
+        va = [ zeroOnNone(dmatch.group(6)),
+            zeroOnNone(releasea[dmatch.group(5)]),
+            zeroOnNone(dmatch.group(4)),
+            zeroOnNone(dmatch.group(3)),
+            zeroOnNone(dmatch.group(2))]
+        v = va[0] + 100 * va[1] + 100 ** 2 * va[2] + 100 ** 3 * va[3] + 100 ** 4 * va[4]
+        a[dmatch.group(1)] = (v, va)
+    vl = sorted(a.items(), key=lambda kv:(kv[1][0]))
+    return vl
+  
+  def getHTTP(self):
+    if self.http is None:
+      self.http = urllib3.PoolManager()
+    return self.http
+  
+  def SaveFile(self, url, file):
+    print(url)
+    r = self.getHTTP().request('GET', url)
+    f = open(file, 'wb')
+    f.write(r.data)
+    f.close
+
+  def SaveCore(self):
+    self.dcore = d.getVersion(DREPOSITORY, drerev)
+    dcoref = d.gitFilter(self.dcore)
+    rfile = DFILE.format(dcoref[-1][0])
+    url = DTAR.format(rfile)
+    file = os.path.join(self.workdir, "core", rfile)
+    self.SaveFile(url, file)
+    return file
+    
+  def installCore(self):
+    file = self.SaveCore()
+    tar = tarfile.open(file, 'r:gz')
+    tar.extractall(path="/tmp/pino")
+    tar.close()
+  
+  def SaveModules(self, modules):
+    if modules is not None:
+      for m in modules:
+        dmrepo = DMREPOSITORY.format(m)
+        dmodules = d.getVersion(dmrepo, dmrerev)
+        dmodulesf = d.gitFilter(dmodules)
+        rfile = DMFILE.format(m, dmodulesf[-1][0])
+        url = DTAR.format(rfile)
+        file = os.path.join(self.workdir, "modules", rfile)
+        self.SaveFile(url, file)
+        
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -109,6 +172,10 @@ if __name__ == "__main__":
                         metavar='PATH',
                         required=True,
                         help='path')
+  parser.add_argument('-w', '--workdir',
+                        dest='workdir',
+                        metavar='PATH',
+                        help='working directory and cache')
   parser.add_argument('-a', '--action',
                         dest='action',
                         choices=('download', 'composer', 'install'),
@@ -119,54 +186,26 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
 
-  drupal = Drupal()
-  OB = OnBreak(drupal)
-
   base = args.base
   release = args.release
   modules = args.modules
   action = args.action
+  path = args.path
+  workdir = args.workdir
 
-  releasea = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
   g = git.cmd.Git()
-  # 9.0.0-beta2
-  # 5 4 3    21
-  # 7.0-unstable-10 not supported
-  # 7.0-alpha7
-  drerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
-  dmrerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
-  a = {}
-  va = []
 
-  rev_temp = getVersion(DREPOSITORY, drerev)
-  if(base is not None):
-    rev_temp = [v for v in rev_temp if (v[1][0] >= base * 100 ** 4 and v[1][0] < (base + 1) * 100 ** 4)]
-  rev_temp = [v for v in rev_temp if (v[1][1][1] >= releasea[release])]
+  d = Drupal(workdir)
+  OB = OnBreak(d)
 
-  file = DFILE.format(rev_temp[-1][0])
-  
-  url = DTAR.format(file)
-  print(url)
-  
-  if modules is not None:
-    for m in modules:
-      a = {}
-      va = []
-      dmrepo = DMREPOSITORY.format(m)
-      rev_temp = getVersion(dmrepo, dmrerev)
-      if(base is not None):
-        rev_temp = [v for v in rev_temp if (v[1][0] >= base * 100 ** 4 and v[1][0] < (base + 1) * 100 ** 4)]
-      rev_temp = [v for v in rev_temp if (v[1][1][1] >= releasea[release])]
-  
-      file = DMFILE.format(m, rev_temp[-1][0])
-      url = DTAR.format(file)
-      print(url)
+  d.createWorkingDir()
 
-#   http = urllib3.PoolManager()
-#   r = http.request('GET', url)
-#   f = open(file, 'wb')
-#   f.write(r.data)
-#   f.close
+  d.installCore()
+  
+  
+#   d.Drush()
+  
+  d.SaveModules(modules)
 
   print("OK")
 
