@@ -1,0 +1,4 @@
+#!/bin/bash
+aptitude install composer
+wget -O /usr/local/bin/drush https://github.com/drush-ops/drush-launcher/releases/latest/download/drush.phar
+chmod ugo+x /usr/local/bin/drush
