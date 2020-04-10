@@ -19,7 +19,7 @@ import os
 import sys
 import signal
 
-# import subprocess
+import subprocess
 
 import tempfile
 
@@ -35,6 +35,7 @@ import argparse
 DREPOSITORY = "https://git.drupal.org/project/drupal.git"
 DMREPOSITORY = "https://git.drupalcode.org/project/{}.git"
 DFILE = "drupal-{}.tar.gz"
+DDIR = "drupal-{}"
 DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
 
@@ -46,6 +47,7 @@ releasea = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
 # 7.0-alpha7
 drerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 dmrerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+
 
 class OnBreak():
   kill_now = False
@@ -63,8 +65,11 @@ class OnBreak():
 def zeroOnNone(x):
   return int(x) if x is not None else 0
 
+
 class Drupal():
-  def __init__(self, workdir):
+
+  def __init__(self, path, workdir):
+    self.path = path
     self.workdir = workdir
     self.http = None
 
@@ -104,12 +109,12 @@ class Drupal():
         a[dmatch.group(1)] = (v, va)
     vl = sorted(a.items(), key=lambda kv:(kv[1][0]))
     return vl
-  
+
   def getHTTP(self):
     if self.http is None:
       self.http = urllib3.PoolManager()
     return self.http
-  
+
   def SaveFile(self, url, file):
     print(url)
     r = self.getHTTP().request('GET', url)
@@ -119,19 +124,30 @@ class Drupal():
 
   def SaveCore(self):
     self.dcore = d.getVersion(DREPOSITORY, drerev)
-    dcoref = d.gitFilter(self.dcore)
-    rfile = DFILE.format(dcoref[-1][0])
+    self.dcoref = d.gitFilter(self.dcore)
+    rfile = DFILE.format(self.dcoref[-1][0])
     url = DTAR.format(rfile)
     file = os.path.join(self.workdir, "core", rfile)
     self.SaveFile(url, file)
     return file
-    
+
   def installCore(self):
     file = self.SaveCore()
     tar = tarfile.open(file, 'r:gz')
-    tar.extractall(path="/tmp/pino")
+    # TODO check if path exists otherwise create it
+    basepath = os.path.split(os.path.normpath(self.path))[0]
+    tar.extractall(path=basepath)
     tar.close()
-  
+    os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.path)
+
+  def installModules(self):
+    pass
+
+  def Drush(self):
+    p = subprocess.run(['composer', 'require', 'drush/drush'], shell=True, cwd=self.path)
+    if(p==0): print("Drush OK")
+    pass
+
   def SaveModules(self, modules):
     if modules is not None:
       for m in modules:
@@ -142,7 +158,6 @@ class Drupal():
         url = DTAR.format(rfile)
         file = os.path.join(self.workdir, "modules", rfile)
         self.SaveFile(url, file)
-        
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -154,6 +169,10 @@ if __name__ == "__main__":
                         metavar='BASEVERSION',
                         help='main base version: 7, 8, 9...',
                         type=int)
+  parser.add_argument('-d', '--drush',
+                        dest='drush',
+                        action='store_true',
+                        help='install drush')
   parser.add_argument('-r', '--release',
                         dest='release',
                         metavar='RELEASE',
@@ -171,7 +190,7 @@ if __name__ == "__main__":
                         dest='path',
                         metavar='PATH',
                         required=True,
-                        help='path')
+                        help='destination path')
   parser.add_argument('-w', '--workdir',
                         dest='workdir',
                         metavar='PATH',
@@ -179,8 +198,8 @@ if __name__ == "__main__":
   parser.add_argument('-a', '--action',
                         dest='action',
                         choices=('download', 'composer', 'install'),
-#                         metavar='ACTION',
                         type=str.lower,
+                        default='download',
 #                         required=True,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
 
@@ -195,17 +214,24 @@ if __name__ == "__main__":
 
   g = git.cmd.Git()
 
-  d = Drupal(workdir)
+  d = Drupal(path, workdir)
   OB = OnBreak(d)
 
   d.createWorkingDir()
 
-  d.installCore()
-  
-  
-#   d.Drush()
-  
-  d.SaveModules(modules)
+  if (action == 'download'):
+    d.SaveCore()
+  elif(action == 'install'):
+    d.installCore()
+#     first install drupal and DB, then install modules
+    d.installModules()
+  elif(action == 'composer'):
+    d.installCore()
+    
+  if(args.drush):
+    d.Drush()
+
+#   d.SaveModules(modules)
 
   print("OK")
 
