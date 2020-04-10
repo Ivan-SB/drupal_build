@@ -144,7 +144,8 @@ class Drupal():
     pass
 
   def Drush(self):
-    p = subprocess.run(['composer', 'require', 'drush/drush'], shell=True, cwd=self.path)
+    p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.path)
+    print(p)
     if(p==0): print("Drush OK")
     pass
 
@@ -221,6 +222,7 @@ if __name__ == "__main__":
 
   if (action == 'download'):
     d.SaveCore()
+#     d.SaveModules(modules)
   elif(action == 'install'):
     d.installCore()
 #     first install drupal and DB, then install modules
@@ -230,8 +232,6 @@ if __name__ == "__main__":
     
   if(args.drush):
     d.Drush()
-
-#   d.SaveModules(modules)
 
   print("OK")
 
