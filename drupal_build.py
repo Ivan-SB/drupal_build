@@ -116,7 +116,6 @@ class Drupal():
     return self.http
 
   def SaveFile(self, url, file):
-    print(url)
     r = self.getHTTP().request('GET', url)
     f = open(file, 'wb')
     f.write(r.data)
@@ -139,17 +138,8 @@ class Drupal():
     tar.extractall(path=basepath)
     tar.close()
     os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.path)
-
-  def installModules(self):
-    pass
-
-  def Drush(self):
-    p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.path)
-    print(p)
-    if(p==0): print("Drush OK")
-    pass
-
-  def SaveModules(self, modules):
+    
+  def SaveModule(self, modules):
     if modules is not None:
       for m in modules:
         dmrepo = DMREPOSITORY.format(m)
@@ -159,6 +149,25 @@ class Drupal():
         url = DTAR.format(rfile)
         file = os.path.join(self.workdir, "modules", rfile)
         self.SaveFile(url, file)
+        yield (m, file)
+        
+  def SaveModules(self, modules):
+    for _ in self.SaveModule(modules):
+      pass
+
+  def installModules(self):
+    pass
+#     basepath = os.path.split(os.path.normpath(self.path))[0]
+#     for i in self.SaveModules(modules):
+#       tar.extractall(path=basepath)
+  def composerModules(self):
+    pass
+    
+      
+
+  def Drush(self):
+    p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.path)
+    if(p==0): print("Drush OK")
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -170,7 +179,11 @@ if __name__ == "__main__":
                         metavar='BASEVERSION',
                         help='main base version: 7, 8, 9...',
                         type=int)
-  parser.add_argument('-d', '--drush',
+  parser.add_argument('-d', '--db',
+                        dest='db',
+                        metavar='DB',
+                        help='db connection JSON file')
+  parser.add_argument('-s', '--drush',
                         dest='drush',
                         action='store_true',
                         help='install drush')
@@ -222,16 +235,18 @@ if __name__ == "__main__":
 
   if (action == 'download'):
     d.SaveCore()
-#     d.SaveModules(modules)
+    d.SaveModules(modules)
   elif(action == 'install'):
     d.installCore()
 #     first install drupal and DB, then install modules
     d.installModules()
+    if(args.drush):
+      d.Drush()
   elif(action == 'composer'):
     d.installCore()
+    d.composerModules()
+    if(args.drush):
+      d.Drush()
     
-  if(args.drush):
-    d.Drush()
-
   print("OK")
 
