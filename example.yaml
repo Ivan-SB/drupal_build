@@ -1,0 +1,29 @@
+# download, install, composer
+action: install
+path: PATHTOINSTALLATION # directory where drupal will be installed
+base: 8 # pick the newer version of this base version
+release: alpha # stable if none otherwise no less than specified (dev, alpha, beta, rc)
+db_admin:
+   user: USER
+   host: HOST
+   passwd: OTHERWISEREQUESTED
+   ssl:
+      key: /PATHTO/mysql-client.key
+      cert: /PATHTO/mysql-client.pem
+      ca: /PATHTO/ca-cert.pem
+db:
+   user: test1
+   db: test1
+   passwd: OTHERWISEGENERATED
+drush: True # install drush
+modules:
+   # list of modules to download/install/enable
+   - module1
+   - module2
+themes:
+   #list of themes to download/install/enable
+   - theme1
+   - theme2
+# where archives will be saved, could be used as a chache
+# OS temporary directory if not specified
+workdir: PATHTOWORKDIR

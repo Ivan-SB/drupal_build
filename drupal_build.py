@@ -30,7 +30,11 @@ import git
 
 import tarfile
 
+import MySQLdb
+
+import yaml
 import argparse
+import getpass
 
 DREPOSITORY = "https://git.drupal.org/project/drupal.git"
 DMREPOSITORY = "https://git.drupalcode.org/project/{}.git"
@@ -61,14 +65,13 @@ class OnBreak():
 #     SOME ACTION
     sys.exit(0)
 
-
 def zeroOnNone(x):
   return int(x) if x is not None else 0
 
-
 class Drupal():
 
-  def __init__(self, path, workdir):
+  def __init__(self, config, path, workdir):
+    self.config = config
     self.path = path
     self.workdir = workdir
     self.http = None
@@ -138,7 +141,7 @@ class Drupal():
     tar.extractall(path=basepath)
     tar.close()
     os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.path)
-    
+
   def SaveModule(self, modules):
     if modules is not None:
       for m in modules:
@@ -150,7 +153,7 @@ class Drupal():
         file = os.path.join(self.workdir, "modules", rfile)
         self.SaveFile(url, file)
         yield (m, file)
-        
+
   def SaveModules(self, modules):
     for _ in self.SaveModule(modules):
       pass
@@ -160,14 +163,42 @@ class Drupal():
 #     basepath = os.path.split(os.path.normpath(self.path))[0]
 #     for i in self.SaveModules(modules):
 #       tar.extractall(path=basepath)
+
   def composerModules(self):
     pass
+
+  def createConnection(self):
+    adminuser = self.config["db_admin"]["user"]
+    connhost = self.config["db_admin"]["host"]
+    ssl = self.config["db_admin"]["ssl"]
     
-      
+    user = self.config["db"]["user"]
+    db = self.config["db"]["db"]
+    passwd = "pino"
+    host = "localhost"
+    
+    print('DB superuser credentials')
+    pwd = getpass.getpass(prompt='Password for user: ')
+    self.conn = MySQLdb.connect(host=connhost, user=adminuser, passwd=pwd,
+                                ssl=ssl
+                                )
+    cur = self.conn.cursor()
+    cur.execute('create database if not exists {};'.format(db))
+    cur.execute("create user if not exists %s@%s", (user, host,))
+#     cur.execute("set password for %s@%s = password(%s)", (user, host, passwd,))
+#     cur.execute("""
+#       grant select, insert, update, delete, create, drop, index, alter,
+#       create temporary tables on %s.* to %s@%s
+#     """, (db, user, host,))
+    cur.execute("flush privileges")
+
+  def createUser(self):
+    pass
 
   def Drush(self):
     p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.path)
-    if(p==0): print("Drush OK")
+    if(p == 0): print("Drush OK")
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -196,10 +227,6 @@ if __name__ == "__main__":
                         metavar='MODULE',
                         nargs='*',
                         help='list of modules to be installed')
-  parser.add_argument('-t', '--manual',
-                        dest='manual',
-                        action='store_true',
-                        help='capture adc')
   parser.add_argument('-p', '--path',
                         dest='path',
                         metavar='PATH',
@@ -209,6 +236,10 @@ if __name__ == "__main__":
                         dest='workdir',
                         metavar='PATH',
                         help='working directory and cache')
+  parser.add_argument('-c', '--config',
+                        dest='config',
+                        metavar='FILE',
+                        help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
                         choices=('download', 'composer', 'install'),
@@ -225,11 +256,18 @@ if __name__ == "__main__":
   action = args.action
   path = args.path
   workdir = args.workdir
+  config = args.config
 
   g = git.cmd.Git()
+  
+  with open(config) as y:
+    cfg = yaml.load(y, Loader=yaml.FullLoader)
 
-  d = Drupal(path, workdir)
+  d = Drupal(cfg, path, workdir)
   OB = OnBreak(d)
+
+  d.createConnection()
+  exit()
 
   d.createWorkingDir()
 
@@ -247,6 +285,6 @@ if __name__ == "__main__":
     d.composerModules()
     if(args.drush):
       d.Drush()
-    
+
   print("OK")
 
