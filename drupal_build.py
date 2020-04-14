@@ -65,21 +65,22 @@ class OnBreak():
 #     SOME ACTION
     sys.exit(0)
 
+
 def zeroOnNone(x):
   return int(x) if x is not None else 0
 
+
 class Drupal():
 
-  def __init__(self, config, path, workdir):
-    self.config = config
-    self.path = path
-    self.workdir = workdir
+  def __init__(self, cfg):
+    self.cfg = cfg
+    self.conn = None
     self.http = None
 
   def gitFilter(self, vl):
-    if(base is not None):
-      vl = [v for v in vl if (v[1][0] >= base * 100 ** 4 and v[1][0] < (base + 1) * 100 ** 4)]
-    vl = [v for v in vl if (v[1][1][1] >= releasea[release])]
+    if(self.cfg["base"] is not None):
+      vl = [v for v in vl if (v[1][0] >= self.cfg["base"] * 100 ** 4 and v[1][0] < (self.cfg["base"] + 1) * 100 ** 4)]
+    vl = [v for v in vl if (v[1][1][1] >= releasea[self.cfg["release"]])]
     return vl
 
   def createDirs(self, base):
@@ -89,13 +90,13 @@ class Drupal():
     return base
 
   def createWorkingDir(self):
-    if self.workdir is None:
-      self.workdir = tempfile.mkdtemp(prefix="drupal_")
-      self.createDirs(self.workdir)
+    if self.cfg["workdir"] is None:
+      self.cfg["workdir"] = tempfile.mkdtemp(prefix="drupal_")
+      self.createDirs(self.cfg["workdir"])
     else:
-      self.workdir = os.path.join(base, "drupal")
-      os.makedirs(self.workdir, exist_ok=True)
-      self.createDirs(self.workdir)
+      self.cfg["workdir"] = os.path.join(self.cfg["base"], "drupal")
+      os.makedirs(self.cfg["workdir"], exist_ok=True)
+      self.createDirs(self.cfg["workdir"])
 
   def getVersion(self, repo, refilter):
     a = {}
@@ -129,7 +130,7 @@ class Drupal():
     self.dcoref = d.gitFilter(self.dcore)
     rfile = DFILE.format(self.dcoref[-1][0])
     url = DTAR.format(rfile)
-    file = os.path.join(self.workdir, "core", rfile)
+    file = os.path.join(self.cfg["workdir"], "core", rfile)
     self.SaveFile(url, file)
     return file
 
@@ -137,66 +138,91 @@ class Drupal():
     file = self.SaveCore()
     tar = tarfile.open(file, 'r:gz')
     # TODO check if path exists otherwise create it
-    basepath = os.path.split(os.path.normpath(self.path))[0]
+    basepath = os.path.split(os.path.normpath(self.cfg["path"]))[0]
     tar.extractall(path=basepath)
     tar.close()
-    os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.path)
+    os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.cfg["path"])
 
-  def SaveModule(self, modules):
-    if modules is not None:
-      for m in modules:
+  def enableCore(self):
+    pass
+
+  def SaveModule(self):
+#     FIXME if no module cascade of errors in functions using this
+    if self.cfg['modules'] is not None:
+      for m in self.cfg['modules']:
         dmrepo = DMREPOSITORY.format(m)
-        dmodules = d.getVersion(dmrepo, dmrerev)
-        dmodulesf = d.gitFilter(dmodules)
+        dmodules = self.getVersion(dmrepo, dmrerev)
+        dmodulesf = self.gitFilter(dmodules)
         rfile = DMFILE.format(m, dmodulesf[-1][0])
         url = DTAR.format(rfile)
-        file = os.path.join(self.workdir, "modules", rfile)
+        file = os.path.join(self.cfg["workdir"], "modules", rfile)
         self.SaveFile(url, file)
-        yield (m, file)
+        yield {"module": m, "file": file}
+    else:
+      yield {}
 
-  def SaveModules(self, modules):
-    for _ in self.SaveModule(modules):
+  def SaveModules(self):
+    for _ in self.SaveModule():
       pass
 
   def installModules(self):
+    basepath = os.path.normpath(self.cfg["path"])
+    for m in self.SaveModule():
+      modulepath = os.path.join(basepath, "modules/contrib")
+      tar = tarfile.open(m['file'], 'r:gz')
+      tar.extractall(path=modulepath)
+
+  def enableModules(self):
     pass
-#     basepath = os.path.split(os.path.normpath(self.path))[0]
-#     for i in self.SaveModules(modules):
-#       tar.extractall(path=basepath)
 
   def composerModules(self):
     pass
 
   def createConnection(self):
-    adminuser = self.config["db_admin"]["user"]
-    connhost = self.config["db_admin"]["host"]
-    ssl = self.config["db_admin"]["ssl"]
-    
-    user = self.config["db"]["user"]
-    db = self.config["db"]["db"]
-    passwd = "pino"
-    host = "localhost"
-    
-    print('DB superuser credentials')
-    pwd = getpass.getpass(prompt='Password for user: ')
-    self.conn = MySQLdb.connect(host=connhost, user=adminuser, passwd=pwd,
+    if self.conn is None:
+      adminuser = self.cfg["db_admin"]["user"]
+      connhost = self.cfg["db_admin"]["host"]
+      ssl = self.cfg["db_admin"].get("ssl", None)
+      print('DB superuser credentials')
+      pwd = getpass.getpass(prompt='Password for user: ')
+      self.conn = MySQLdb.connect(host=connhost, user=adminuser, passwd=pwd,
                                 ssl=ssl
                                 )
-    cur = self.conn.cursor()
-    cur.execute('create database if not exists {};'.format(db))
-    cur.execute("create user if not exists %s@%s", (user, host,))
-#     cur.execute("set password for %s@%s = password(%s)", (user, host, passwd,))
-#     cur.execute("""
-#       grant select, insert, update, delete, create, drop, index, alter,
-#       create temporary tables on %s.* to %s@%s
-#     """, (db, user, host,))
-    cur.execute("flush privileges")
+      self.cur = self.conn.cursor()
 
   def createUser(self):
-    pass
+    host = self.cfg["db"]["host"]
+    user = self.cfg["db"]["user"]
+    #     TODO generate or get passwd
+    passwd = self.cfg["db"]["passwd"]
+    db = self.cfg["db"]["db"]
+    self.cur.execute("create user if not exists %s@%s", (user, host,))
+    self.cur.execute("set password for %s@%s = password(%s)", (user, host, passwd,))
+    self.cur.execute("""
+        grant select, insert, update, delete, create, drop, index, alter,
+        create temporary tables on {}.* to %s@%s
+        """.format(db), (user, host,))
+    self.cur.execute("flush privileges")
+
+  def createDB(self):
+    db = self.cfg["db"]["db"]
+    self.cur.execute('create database if not exists {};'.format(db))
+
+  def setupDB(self):
+    self.createConnection()
+    self.createDB()
+    self.createUser()
+
+  def cleanupDB(self):
+    self.createConnection()
+    host = self.cfg["db"]["host"]
+    user = self.cfg["db"]["user"]
+    db = self.cfg["db"]["db"]
+    self.cur.execute("drop user %s@%s", (user, host,))
+    self.cur.execute('drop database {};'.format(db))
 
   def Drush(self):
-    p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.path)
+    p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.cfg["path"])
     if(p == 0): print("Drush OK")
 
 
@@ -210,10 +236,6 @@ if __name__ == "__main__":
                         metavar='BASEVERSION',
                         help='main base version: 7, 8, 9...',
                         type=int)
-  parser.add_argument('-d', '--db',
-                        dest='db',
-                        metavar='DB',
-                        help='db connection JSON file')
   parser.add_argument('-s', '--drush',
                         dest='drush',
                         action='store_true',
@@ -230,19 +252,22 @@ if __name__ == "__main__":
   parser.add_argument('-p', '--path',
                         dest='path',
                         metavar='PATH',
-                        required=True,
                         help='destination path')
   parser.add_argument('-w', '--workdir',
                         dest='workdir',
                         metavar='PATH',
                         help='working directory and cache')
+  parser.add_argument('-d', '--db',
+                        dest='db',
+                        metavar='USER:PASSWORD@HOST:DB',
+                        help='db info')
   parser.add_argument('-c', '--config',
                         dest='config',
                         metavar='FILE',
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('download', 'composer', 'install'),
+                        choices=('download', 'unpack', 'install', 'composer'),
                         type=str.lower,
                         default='download',
 #                         required=True,
@@ -250,41 +275,50 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
 
-  base = args.base
-  release = args.release
-  modules = args.modules
-  action = args.action
-  path = args.path
-  workdir = args.workdir
   config = args.config
-
-  g = git.cmd.Git()
-  
   with open(config) as y:
     cfg = yaml.load(y, Loader=yaml.FullLoader)
 
-  d = Drupal(cfg, path, workdir)
-  OB = OnBreak(d)
+  cfg["base"] = cfg.get("base", None) if args.base is None else args.base
+  cfg["release"] = cfg.get("release", None) if args.release is None else args.release
+  cfg["modules"] = cfg.get("modules", None) if args.modules is None else args.modules
+  cfg["path"] = cfg.get("path", None) if args.path is None else args.path
+  cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
+  cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
+  action = args.action
 
-  d.createConnection()
-  exit()
+  g = git.cmd.Git()
+
+  d = Drupal(cfg)
+  OB = OnBreak(d)
 
   d.createWorkingDir()
 
   if (action == 'download'):
     d.SaveCore()
-    d.SaveModules(modules)
+    d.SaveModules()
+  elif(action == 'unpack'):
+    d.installCore()
+    d.installModules()
   elif(action == 'install'):
     d.installCore()
-#     first install drupal and DB, then install modules
+    d.setupDB()
+    d.enableCore()
     d.installModules()
     if(args.drush):
       d.Drush()
+    d.enableModules()
   elif(action == 'composer'):
     d.installCore()
+    d.setupDB()
+    d.enableCore()
     d.composerModules()
     if(args.drush):
       d.Drush()
+    d.enableModules()
 
   print("OK")
+  
+  d.setupDB()
+  d.cleanupDB()
 
