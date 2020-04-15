@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
 """
+dependencies:
+python3-urllib3
+python3-git
+python3-yaml
+python3-urllib3
+
 https://docs.python.org/3/library/tarfile.html
 https://janakiev.com/blog/python-shell-commands/
 
-import subprocess
-process = subprocess.Popen(['echo', 'More output'],
-                     stdout=subprocess.PIPE,
-                     stderr=subprocess.PIPE)
 stdout, stderr = process.communicate()
 stdout, stderr
 
@@ -149,17 +151,22 @@ class Drupal():
                                                    self.cfg["db"]["host"],
                                                    self.cfg["db"]["db"])
     p = subprocess.run(["drush",
+                        "--debug",
+                        "-vvv",
                         "site-install",
                         self.cfg["site"]["type"],
                         dbstring,
-                        "--account-mail={}".format(self.cfg["site"]["admin-email"]),
+                        "--account-mail={}".format(self.cfg["site"]["admin-mail"]),
                         "--account-name={}".format(self.cfg["site"]["admin-name"]),
                         "--account-pass={}".format(self.cfg["site"]["admin-passwd"]),
                         "--site-mail={}".format(self.cfg["site"]["site-mail"]),
                         "--site-name={}".format(self.cfg["site"]["site-name"]),
                         ],
                         cwd=self.cfg["path"])
-    if(p == 0): print("Core OK")
+    if(p.returncode == 0):
+      print("Core OK")
+    else:
+      print(p)
 
   def SaveModule(self):
 #     FIXME if no module cascade of errors in functions using this
@@ -192,7 +199,10 @@ class Drupal():
 #     if self.cfg.get("modules", None) is not None:
 #       mod = ",".join(self.cfg["modules"])
 #       p = subprocess.run(["drush", "en", mod], cwd=self.cfg["path"])
-#       if(p == 0): print("Core OK")
+#       if(p.returncode == 0):
+#         print("Modules OK")
+#       else:
+#         print(p)
 
   def composerModules(self):
     pass
@@ -242,7 +252,10 @@ class Drupal():
 
   def Drush(self):
     p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.cfg["path"])
-    if(p == 0): print("Drush OK")
+    if(p.returncode == 0):
+      print("Drush OK")
+    else:
+      print(p)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -318,23 +331,20 @@ if __name__ == "__main__":
   elif(action == 'unpack'):
     d.installCore()
     d.installModules()
+    if(args.drush):
+      d.Drush()
   elif(action == 'install'):
     d.installCore()
     d.setupDB()
+    d.Drush()
     d.enableCore()
     d.installModules()
-    if(args.drush):
-      d.Drush()
     d.enableModules()
   elif(action == 'composer'):
     d.installCore()
     d.setupDB()
     d.enableCore()
     d.composerModules()
-    if(args.drush):
-      d.Drush()
     d.enableModules()
 
-  print("OK")
-
-
+  print("FINISH")
