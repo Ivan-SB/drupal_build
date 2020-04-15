@@ -144,7 +144,22 @@ class Drupal():
     os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.cfg["path"])
 
   def enableCore(self):
-    pass
+    dbstring="--db-url=mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
+                                                   self.cfg["db"]["passwd"],
+                                                   self.cfg["db"]["host"],
+                                                   self.cfg["db"]["db"])
+    p = subprocess.run(["drush",
+                        "site-install",
+                        self.cfg["site"]["type"],
+                        dbstring,
+                        "--account-mail={}".format(self.cfg["site"]["admin-email"]),
+                        "--account-name={}".format(self.cfg["site"]["admin-name"]),
+                        "--account-pass={}".format(self.cfg["site"]["admin-passwd"]),
+                        "--site-mail={}".format(self.cfg["site"]["site-mail"]),
+                        "--site-name={}".format(self.cfg["site"]["site-name"]),
+                        ],
+                        cwd=self.cfg["path"])
+    if(p == 0): print("Core OK")
 
   def SaveModule(self):
 #     FIXME if no module cascade of errors in functions using this
@@ -174,6 +189,10 @@ class Drupal():
 
   def enableModules(self):
     pass
+#     if self.cfg.get("modules", None) is not None:
+#       mod = ",".join(self.cfg["modules"])
+#       p = subprocess.run(["drush", "en", mod], cwd=self.cfg["path"])
+#       if(p == 0): print("Core OK")
 
   def composerModules(self):
     pass
@@ -224,7 +243,6 @@ class Drupal():
   def Drush(self):
     p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.cfg["path"])
     if(p == 0): print("Drush OK")
-
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -318,7 +336,5 @@ if __name__ == "__main__":
     d.enableModules()
 
   print("OK")
-  
-  d.setupDB()
-  d.cleanupDB()
+
 
