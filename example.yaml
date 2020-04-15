@@ -1,4 +1,4 @@
-# download, install, composer
+# download, unpack, install, composer
 action: install
 path: PATHTOINSTALLATION # directory where drupal will be installed
 base: 8 # pick the newer version of this base version
@@ -27,3 +27,10 @@ themes:
 # where archives will be saved, could be used as a chache
 # OS temporary directory if not specified
 workdir: PATHTOWORKDIR
+site:
+   type: standard
+   admin: admin
+   admin-mail: webmaster@webthatworks.it
+   admin-passwd: XXXXXXXXXXXX
+   site-mail: info@webthatworks.it
+   site-name: WebThatWorks.it
