@@ -298,7 +298,7 @@ if __name__ == "__main__":
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('download', 'unpack', 'install', 'composer'),
+                        choices=('download', 'unpack', 'db', 'install', 'composer'),
                         type=str.lower,
                         default='download',
 #                         required=True,
@@ -333,6 +333,12 @@ if __name__ == "__main__":
     d.installModules()
     if(args.drush):
       d.Drush()
+  elif(action == 'db'):
+    d.installCore()
+    d.setupDB()
+    if(args.drush):
+      d.Drush()
+    d.installModules()
   elif(action == 'install'):
     d.installCore()
     d.setupDB()
