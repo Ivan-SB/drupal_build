@@ -96,7 +96,7 @@ class Drupal():
       self.cfg["workdir"] = tempfile.mkdtemp(prefix="drupal_")
       self.createDirs(self.cfg["workdir"])
     else:
-      self.cfg["workdir"] = os.path.join(self.cfg["base"], "drupal")
+#       self.cfg["workdir"] = os.path.join(self.cfg["workdir"], "drupal_cache")
       os.makedirs(self.cfg["workdir"], exist_ok=True)
       self.createDirs(self.cfg["workdir"])
 
@@ -128,43 +128,52 @@ class Drupal():
     f.close
 
   def SaveCore(self):
+    print("Saving Core")
     self.dcore = d.getVersion(DREPOSITORY, drerev)
     self.dcoref = d.gitFilter(self.dcore)
     rfile = DFILE.format(self.dcoref[-1][0])
-    url = DTAR.format(rfile)
     file = os.path.join(self.cfg["workdir"], "core", rfile)
-    self.SaveFile(url, file)
+    if(not os.path.exists(file)):
+      url = DTAR.format(rfile)
+      self.SaveFile(url, file)
+      print("Core Saved")
+    else:
+      print("Core from cache")
     return file
 
   def installCore(self):
     file = self.SaveCore()
+    print("Unpacking Core")
     tar = tarfile.open(file, 'r:gz')
     # TODO check if path exists otherwise create it
     basepath = os.path.split(os.path.normpath(self.cfg["path"]))[0]
     tar.extractall(path=basepath)
     tar.close()
     os.rename(os.path.join(basepath, DDIR.format(self.dcoref[-1][0])), self.cfg["path"])
+    print("Core unpacked")
 
   def enableCore(self):
-    dbstring="--db-url=mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
+    print("Enabling Core")
+    dbstring="mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
                                                    self.cfg["db"]["passwd"],
                                                    self.cfg["db"]["host"],
                                                    self.cfg["db"]["db"])
-    p = subprocess.run(["drush",
-                        "--debug",
-                        "-vvv",
-                        "site-install",
-                        self.cfg["site"]["type"],
-                        dbstring,
-                        "--account-mail={}".format(self.cfg["site"]["admin-mail"]),
-                        "--account-name={}".format(self.cfg["site"]["admin-name"]),
-                        "--account-pass={}".format(self.cfg["site"]["admin-passwd"]),
-                        "--site-mail={}".format(self.cfg["site"]["site-mail"]),
-                        "--site-name={}".format(self.cfg["site"]["site-name"]),
-                        ],
-                        cwd=self.cfg["path"])
+#     drush seems to need shell
+    sstring=" ".join(("drush",
+                      "site-install",
+                      self.cfg["site"]["type"],
+                      "--yes",
+                      "--db-url",
+                      dbstring,
+                      "--account-mail", self.cfg["site"]["admin-mail"],
+                      "--account-name", self.cfg["site"]["admin-name"],
+                      "--account-pass", self.cfg["site"]["admin-passwd"],
+                      "--site-mail", self.cfg["site"]["site-mail"],
+                      "--site-name", self.cfg["site"]["site-name"],
+                        ))
+    p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True) 
     if(p.returncode == 0):
-      print("Core OK")
+      print("Core enabled")
     else:
       print(p)
 
@@ -172,13 +181,18 @@ class Drupal():
 #     FIXME if no module cascade of errors in functions using this
     if self.cfg['modules'] is not None:
       for m in self.cfg['modules']:
+        print("Saving module {}".format(m))
         dmrepo = DMREPOSITORY.format(m)
         dmodules = self.getVersion(dmrepo, dmrerev)
         dmodulesf = self.gitFilter(dmodules)
         rfile = DMFILE.format(m, dmodulesf[-1][0])
-        url = DTAR.format(rfile)
         file = os.path.join(self.cfg["workdir"], "modules", rfile)
-        self.SaveFile(url, file)
+        if(not os.path.exists(file)):
+          url = DTAR.format(rfile)
+          self.SaveFile(url, file)
+          print("Module {} saved".format(m))
+        else:
+          print("Module {} from cache".format(m))
         yield {"module": m, "file": file}
     else:
       yield {}
@@ -190,9 +204,11 @@ class Drupal():
   def installModules(self):
     basepath = os.path.normpath(self.cfg["path"])
     for m in self.SaveModule():
+      print("Unpacking module {}".format(m["module"]))
       modulepath = os.path.join(basepath, "modules/contrib")
       tar = tarfile.open(m['file'], 'r:gz')
       tar.extractall(path=modulepath)
+      print("Module {} unpacked".format(m["module"]))
 
   def enableModules(self):
     pass
