@@ -18,6 +18,7 @@ with open('test.txt', 'w') as f:
 """
 
 import os
+import shutil
 import sys
 import signal
 
@@ -254,17 +255,11 @@ class Drupal():
     self.cur.execute('create database if not exists {};'.format(db))
 
   def setupDB(self):
+    print("Setting up DB")
     self.createConnection()
     self.createDB()
     self.createUser()
-
-  def cleanupDB(self):
-    self.createConnection()
-    host = self.cfg["db"]["host"]
-    user = self.cfg["db"]["user"]
-    db = self.cfg["db"]["db"]
-    self.cur.execute("drop user %s@%s", (user, host,))
-    self.cur.execute('drop database {};'.format(db))
+    print("DB ready")
 
   def Drush(self):
     p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.cfg["path"])
@@ -272,6 +267,23 @@ class Drupal():
       print("Drush OK")
     else:
       print(p)
+  
+  def cleanupDB(self):
+    print("Cleaning up DB")
+    self.createConnection()
+    host = self.cfg["db"]["host"]
+    user = self.cfg["db"]["user"]
+    db = self.cfg["db"]["db"]
+    self.cur.execute("drop user %s@%s", (user, host,))
+    self.cur.execute('drop database {};'.format(db))
+    print("DB cleaned up")
+      
+  def Cleanup(self):
+    self.cleanupDB()
+#     TODO files may be write-protected, not enough to change ownership
+#     print("Removing files")
+#     shutil.rmtree(cfg["path"])
+#     print("Files removed")
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -314,7 +326,7 @@ if __name__ == "__main__":
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('download', 'unpack', 'db', 'install', 'composer'),
+                        choices=('download', 'unpack', 'db', 'install', 'composer', 'wipe'),
                         type=str.lower,
                         default='download',
 #                         required=True,
@@ -368,5 +380,7 @@ if __name__ == "__main__":
     d.enableCore()
     d.composerModules()
     d.enableModules()
+  elif(action == 'wipe'):
+    d.Cleanup()
 
   print("FINISH")
