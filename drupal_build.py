@@ -18,7 +18,9 @@ with open('test.txt', 'w') as f:
 """
 
 import os
-import shutil
+import stat
+
+# import shutil
 import sys
 import signal
 
@@ -179,8 +181,7 @@ class Drupal():
       print(p)
 
   def SaveModule(self):
-#     FIXME if no module cascade of errors in functions using this
-    if self.cfg['modules'] is not None:
+    if self.cfg.get("modules", None) is not None:
       for m in self.cfg['modules']:
         print("Saving module {}".format(m))
         dmrepo = DMREPOSITORY.format(m)
@@ -196,7 +197,7 @@ class Drupal():
           print("Module {} from cache".format(m))
         yield {"module": m, "file": file}
     else:
-      yield {}
+      return
 
   def SaveModules(self):
     for _ in self.SaveModule():
@@ -222,7 +223,22 @@ class Drupal():
 #         print(p)
 
   def composerModules(self):
-    pass
+    if self.cfg.get("modules", None) is not None:
+      pstring = ["composer", "require"]
+      cfgdir = os.path.join(self.cfg["path"], "sites", "default")
+      st_mode = os.stat(cfgdir).st_mode
+      os.chmod(cfgdir, st_mode | stat.S_IWUSR | stat.S_IWGRP)
+      for m in self.cfg["modules"]:
+        print("Installing module {} via composer".format(m))
+        mstring = list(map(lambda m: "drupal/{}".format(m), self.cfg["modules"]))
+        pstring.extend(mstring)
+        print(pstring)
+        p = subprocess.run(pstring, cwd=self.cfg["path"])
+        if(p.returncode == 0):
+          print("Composer modules {} OK".format(m))
+        else:
+          print(p)
+      os.chmod(cfgdir, st_mode)
 
   def createConnection(self):
     if self.conn is None:
@@ -377,6 +393,7 @@ if __name__ == "__main__":
   elif(action == 'composer'):
     d.installCore()
     d.setupDB()
+    d.Drush()
     d.enableCore()
     d.composerModules()
     d.enableModules()
