@@ -20,7 +20,7 @@ with open('test.txt', 'w') as f:
 import os
 import stat
 
-# import shutil
+import shutil
 import sys
 import signal
 
@@ -222,23 +222,25 @@ class Drupal():
 #       else:
 #         print(p)
 
+  def composerPackages(self, packages):
+    crequire = ["composer", "require"]
+    cfgdir = os.path.join(self.cfg["path"], "sites", "default")
+    pstring = ", ".join(packages)
+    st_mode = os.stat(cfgdir).st_mode
+    os.chmod(cfgdir, st_mode | stat.S_IWUSR | stat.S_IWGRP)
+    print("Installing packages {} via composer".format(pstring))
+    crequire.extend(packages)
+    p = subprocess.run(crequire, cwd=self.cfg["path"])
+    if(p.returncode == 0):
+      print("Composer packages {} OK".format(pstring))
+    else:
+      print(p)
+    os.chmod(cfgdir, st_mode)
+
   def composerModules(self):
     if self.cfg.get("modules", None) is not None:
-      pstring = ["composer", "require"]
-      cfgdir = os.path.join(self.cfg["path"], "sites", "default")
-      st_mode = os.stat(cfgdir).st_mode
-      os.chmod(cfgdir, st_mode | stat.S_IWUSR | stat.S_IWGRP)
-      for m in self.cfg["modules"]:
-        print("Installing module {} via composer".format(m))
-        mstring = list(map(lambda m: "drupal/{}".format(m), self.cfg["modules"]))
-        pstring.extend(mstring)
-        print(pstring)
-        p = subprocess.run(pstring, cwd=self.cfg["path"])
-        if(p.returncode == 0):
-          print("Composer modules {} OK".format(m))
-        else:
-          print(p)
-      os.chmod(cfgdir, st_mode)
+      packages = list(map(lambda m: "drupal/{}".format(m), self.cfg["modules"]))
+      self.composerPackages(packages)
 
   def createConnection(self):
     if self.conn is None:
@@ -284,6 +286,10 @@ class Drupal():
     else:
       print(p)
   
+  def DrupalCheck(self):
+#     TODO passing --dev should be decided by argument passed 
+    self.composerPackages(["--dev", "phpunit/phpunit", "mglaman/drupal-check"])
+  
   def cleanupDB(self):
     print("Cleaning up DB")
     self.createConnection()
@@ -297,9 +303,9 @@ class Drupal():
   def Cleanup(self):
     self.cleanupDB()
 #     TODO files may be write-protected, not enough to change ownership
-#     print("Removing files")
-#     shutil.rmtree(cfg["path"])
-#     print("Files removed")
+    print("Removing files")
+    shutil.rmtree(cfg["path"])
+    print("Files removed")
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -342,11 +348,19 @@ if __name__ == "__main__":
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('download', 'unpack', 'db', 'install', 'composer', 'wipe'),
+                        choices=('module', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
                         type=str.lower,
                         default='download',
 #                         required=True,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
+  parser.add_argument('-e', '--enable',
+                        dest='enable_modules',
+                        action='store_true',
+                        help='enable modules')
+  parser.add_argument('-k', '--check',
+                        dest='check',
+                        action='store_true',
+                        help='install drupal-check')
 
   args = parser.parse_args()
 
@@ -360,6 +374,8 @@ if __name__ == "__main__":
   cfg["path"] = cfg.get("path", None) if args.path is None else args.path
   cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
+  cfg["check"] = cfg.get("check", None) if args.check is None else args.check
+  cfg["enable_modules"] = cfg.get("enable_modules", None) if args.enable_modules is None else args.enable_modules
   action = args.action
 
   g = git.cmd.Git()
@@ -369,35 +385,42 @@ if __name__ == "__main__":
 
   d.createWorkingDir()
 
-  if (action == 'download'):
+  if (action == 'module'):
+    d.SaveModules()
+  elif(action == 'download'):
     d.SaveCore()
     d.SaveModules()
   elif(action == 'unpack'):
     d.installCore()
     d.installModules()
-    if(args.drush):
+    if(cfg["drush"]):
       d.Drush()
   elif(action == 'db'):
-    d.installCore()
     d.setupDB()
-    if(args.drush):
+    d.installCore()
+    if(cfg["drush"]):
       d.Drush()
     d.installModules()
   elif(action == 'install'):
-    d.installCore()
     d.setupDB()
+    d.installCore()
     d.Drush()
     d.enableCore()
     d.installModules()
-    d.enableModules()
+    if(cfg["enable_modules"]):
+      d.enableModules()
   elif(action == 'composer'):
-    d.installCore()
     d.setupDB()
+    d.installCore()
     d.Drush()
     d.enableCore()
     d.composerModules()
-    d.enableModules()
+    if(cfg["enable_modules"]):
+      d.enableModules()
   elif(action == 'wipe'):
     d.Cleanup()
+    
+  if(cfg["check"]):
+    d.DrupalCheck()
 
   print("FINISH")
