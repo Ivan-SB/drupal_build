@@ -54,8 +54,9 @@ releasea = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
 # 5 4 3    21
 # 7.0-unstable-10 not supported
 # 7.0-alpha7
-drerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
-dmrerev = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dctags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dmtags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dmbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 
 
 class OnBreak():
@@ -103,21 +104,29 @@ class Drupal():
       os.makedirs(self.cfg["workdir"], exist_ok=True)
       self.createDirs(self.cfg["workdir"])
 
-  def getVersion(self, repo, refilter):
+  def getRefs(self, repo, refs, refsfilter):
     a = {}
     va = []
-    for ref in g.ls_remote(repo).split('\n'):
-      dmatch = re.search(refilter, ref)
-      if(dmatch is not None):
-        va = [ zeroOnNone(dmatch.group(6)),
-            zeroOnNone(releasea[dmatch.group(5)]),
-            zeroOnNone(dmatch.group(4)),
-            zeroOnNone(dmatch.group(3)),
-            zeroOnNone(dmatch.group(2))]
+    for ref in refs:
+      refsmatch = re.search(refsfilter, ref)
+      if(refsmatch is not None):
+        va = [ zeroOnNone(refsmatch.group(6)),
+            zeroOnNone(releasea[refsmatch.group(5)]),
+            zeroOnNone(refsmatch.group(4)),
+            zeroOnNone(refsmatch.group(3)),
+            zeroOnNone(refsmatch.group(2))]
         v = va[0] + 100 * va[1] + 100 ** 2 * va[2] + 100 ** 3 * va[3] + 100 ** 4 * va[4]
-        a[dmatch.group(1)] = (v, va)
+        a[refsmatch.group(1)] = (v, va)
     vl = sorted(a.items(), key=lambda kv:(kv[1][0]))
     return vl
+  
+  def getBranches(self, repo, refsfilter):
+    refs = g.ls_remote(repo, heads=True).split('\n')
+    return self.getRefs(repo, refs, refsfilter)
+
+  def getTags(self, repo, refsfilter):
+    refs = g.ls_remote(repo).split('\n')
+    return self.getRefs(repo, refs, refsfilter)
 
   def getHTTP(self):
     if self.http is None:
@@ -132,7 +141,7 @@ class Drupal():
 
   def SaveCore(self):
     print("Saving Core")
-    self.dcore = d.getVersion(DREPOSITORY, drerev)
+    self.dcore = d.getTags(DREPOSITORY, dctags_re)
     self.dcoref = d.gitFilter(self.dcore)
     rfile = DFILE.format(self.dcoref[-1][0])
     file = os.path.join(self.cfg["workdir"], "core", rfile)
@@ -185,7 +194,7 @@ class Drupal():
       for m in self.cfg['modules']:
         print("Saving module {}".format(m))
         dmrepo = DMREPOSITORY.format(m)
-        dmodules = self.getVersion(dmrepo, dmrerev)
+        dmodules = self.getTags(dmrepo, dmtags_re)
         dmodulesf = self.gitFilter(dmodules)
         rfile = DMFILE.format(m, dmodulesf[-1][0])
         file = os.path.join(self.cfg["workdir"], "modules", rfile)
@@ -350,8 +359,6 @@ if __name__ == "__main__":
                         dest='action',
                         choices=('module', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
                         type=str.lower,
-                        default='download',
-#                         required=True,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
   parser.add_argument('-e', '--enable',
                         dest='enable_modules',
