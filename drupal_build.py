@@ -47,8 +47,9 @@ DFILE = "drupal-{}.tar.gz"
 DDIR = "drupal-{}"
 DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
+# https://ftp.drupal.org/files/projects/views_bulk_operations-8.x-3.x-dev.tar.gz
 
-releasea = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
+releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
 
 # 9.0.0-beta2
 # 5 4 3    21
@@ -86,7 +87,7 @@ class Drupal():
   def gitFilter(self, vl):
     if(self.cfg["base"] is not None):
       vl = [v for v in vl if (v[1][0] >= self.cfg["base"] * 100 ** 4 and v[1][0] < (self.cfg["base"] + 1) * 100 ** 4)]
-    vl = [v for v in vl if (v[1][1][1] >= releasea[self.cfg["release"]])]
+    vl = [v for v in vl if (v[1][1][1] >= releases[self.cfg["release"]])]
     return vl
 
   def createDirs(self, base):
@@ -111,7 +112,7 @@ class Drupal():
       refsmatch = re.search(refsfilter, ref)
       if(refsmatch is not None):
         va = [ zeroOnNone(refsmatch.group(6)),
-            zeroOnNone(releasea[refsmatch.group(5)]),
+            zeroOnNone(releases[refsmatch.group(5)]),
             zeroOnNone(refsmatch.group(4)),
             zeroOnNone(refsmatch.group(3)),
             zeroOnNone(refsmatch.group(2))]
@@ -296,8 +297,11 @@ class Drupal():
       print(p)
   
   def DrupalCheck(self):
-#     TODO passing --dev should be decided by argument passed 
-    self.composerPackages(["--dev", "phpunit/phpunit", "mglaman/drupal-check"])
+    if(int(cfg["base"])>8): 
+      self.composerPackages(["--dev", "phpunit/phpunit", "mglaman/drupal-check"])
+    else:
+      self.composerPackages(["phpunit/phpunit", "^7"])
+      self.composerPackages(["--dev", "mglaman/drupal-check"])
   
   def cleanupDB(self):
     print("Cleaning up DB")
@@ -330,6 +334,10 @@ if __name__ == "__main__":
                         dest='drush',
                         action='store_true',
                         help='install drush')
+  parser.add_argument('-g', '--git',
+                        dest='git',
+                        action='store_true',
+                        help='use git HEAD')
   parser.add_argument('-r', '--release',
                         dest='release',
                         metavar='RELEASE',
