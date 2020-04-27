@@ -41,6 +41,8 @@ import yaml
 import argparse
 import getpass
 
+import pprint
+
 DREPOSITORY = "https://git.drupal.org/project/drupal.git"
 DMREPOSITORY = "https://git.drupalcode.org/project/{}.git"
 DFILE = "drupal-{}.tar.gz"
@@ -49,16 +51,16 @@ DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
 # https://ftp.drupal.org/files/projects/views_bulk_operations-8.x-3.x-dev.tar.gz
 
-releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4 }
+releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4, '': 4 }
 
 # 9.0.0-beta2
 # 5 4 3    21
 # 7.0-unstable-10 not supported
 # 7.0-alpha7
 dctags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dcbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.([0-9x]+)?\.?([0-9x]+)?)()()().*")
 dmtags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 dmbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
-
 
 class OnBreak():
   kill_now = False
@@ -73,9 +75,9 @@ class OnBreak():
     sys.exit(0)
 
 
-def zeroOnNone(x):
-  return int(x) if x is not None else 0
-
+def zeroOnNoneX(x):
+  t = 0 if(x == "x" or x == '') else x
+  return int(t) if t is not None else 0
 
 class Drupal():
 
@@ -105,29 +107,22 @@ class Drupal():
       os.makedirs(self.cfg["workdir"], exist_ok=True)
       self.createDirs(self.cfg["workdir"])
 
-  def getRefs(self, repo, refs, refsfilter):
+  def getRefs(self, repo, refsfilter):
     a = {}
     va = []
+    refs = g.ls_remote(repo).split('\n')
     for ref in refs:
       refsmatch = re.search(refsfilter, ref)
       if(refsmatch is not None):
-        va = [ zeroOnNone(refsmatch.group(6)),
-            zeroOnNone(releases[refsmatch.group(5)]),
-            zeroOnNone(refsmatch.group(4)),
-            zeroOnNone(refsmatch.group(3)),
-            zeroOnNone(refsmatch.group(2))]
+        va = [ zeroOnNoneX(refsmatch.group(6)),
+            zeroOnNoneX(releases[refsmatch.group(5)]),
+            zeroOnNoneX(refsmatch.group(4)),
+            zeroOnNoneX(refsmatch.group(3)),
+            zeroOnNoneX(refsmatch.group(2))]
         v = va[0] + 100 * va[1] + 100 ** 2 * va[2] + 100 ** 3 * va[3] + 100 ** 4 * va[4]
         a[refsmatch.group(1)] = (v, va)
     vl = sorted(a.items(), key=lambda kv:(kv[1][0]))
     return vl
-  
-  def getBranches(self, repo, refsfilter):
-    refs = g.ls_remote(repo, heads=True).split('\n')
-    return self.getRefs(repo, refs, refsfilter)
-
-  def getTags(self, repo, refsfilter):
-    refs = g.ls_remote(repo).split('\n')
-    return self.getRefs(repo, refs, refsfilter)
 
   def getHTTP(self):
     if self.http is None:
@@ -142,8 +137,8 @@ class Drupal():
 
   def SaveCore(self):
     print("Saving Core")
-    self.dcore = d.getTags(DREPOSITORY, dctags_re)
-    self.dcoref = d.gitFilter(self.dcore)
+    dcore = d.getRefs(DREPOSITORY, dctags_re)
+    self.dcoref = d.gitFilter(dcore)
     rfile = DFILE.format(self.dcoref[-1][0])
     file = os.path.join(self.cfg["workdir"], "core", rfile)
     if(not os.path.exists(file)):
@@ -195,7 +190,7 @@ class Drupal():
       for m in self.cfg['modules']:
         print("Saving module {}".format(m))
         dmrepo = DMREPOSITORY.format(m)
-        dmodules = self.getTags(dmrepo, dmtags_re)
+        dmodules = self.getRefs(dmrepo, dmtags_re)
         dmodulesf = self.gitFilter(dmodules)
         rfile = DMFILE.format(m, dmodulesf[-1][0])
         file = os.path.join(self.cfg["workdir"], "modules", rfile)
@@ -391,6 +386,7 @@ if __name__ == "__main__":
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
   cfg["check"] = cfg.get("check", None) if args.check is None else args.check
   cfg["enable_modules"] = cfg.get("enable_modules", None) if args.enable_modules is None else args.enable_modules
+    
   action = args.action
 
   g = git.cmd.Git()
