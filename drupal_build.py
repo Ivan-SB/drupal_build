@@ -44,7 +44,7 @@ import getpass
 import pprint
 
 DREPOSITORY = "https://git.drupal.org/project/drupal.git"
-DMREPOSITORY = "https://git.drupalcode.org/project/{}.git"
+DPREPOSITORY = "https://git.drupalcode.org/project/{}.git"
 DFILE = "drupal-{}.tar.gz"
 DDIR = "drupal-{}"
 DMFILE = "{}-{}.tar.gz"
@@ -81,10 +81,10 @@ def zeroOnNoneX(x):
 
 class Drupal():
 
-  def _unpackModules(self, modules):
-#     always return a list with 2 elements (module name, git flag)
-    if modules is not None:
-      return list(map(lambda m: m.partition(',')[0:3:2], modules))
+  def _unpackProjects(self, components):
+#     always return a list with 2 elements (component name, git flag)
+    if components is not None:
+      return list(map(lambda m: m.partition(',')[0:3:2], components))
     else:
       return None
 
@@ -92,7 +92,8 @@ class Drupal():
     self.cfg = cfg
     self.conn = None
     self.http = None
-    self.modules = self._unpackModules(cfg["modules"]) 
+    self.modules = self._unpackProjects(cfg["modules"])
+    self.themes = self._unpackProjects(cfg["themes"])
 
   def gitFilter(self, vl):
     if(self.cfg["base"] is not None):
@@ -193,70 +194,82 @@ class Drupal():
     else:
       print(p)
 
-  def SaveModule(self):
-    if self.modules is not None:
-      for m in self.modules:
-        dmrepo = DMREPOSITORY.format(m[0])
+  def SaveProject(self, component):
+    if(component=="modules"):
+      components = self.modules
+    elif(component=="themes"):
+      components = self.themes
+    else:
+      components = None
+    if components is not None:
+      for m in components:
+        dmrepo = DPREPOSITORY.format(m[0])
 #         get tags
         if m[1] == '':
-          print("Saving module {}".format(m[0]))
-          dmodules = self.getRefs(dmrepo, dmtags_re)
-          dmodulesf = self.gitFilter(dmodules)
-          rfile = DMFILE.format(m[0], dmodulesf[-1][0])
-          file = os.path.join(self.cfg["workdir"], "modules", rfile)
+          print("Saving component {}".format(m[0]))
+          dcomponents = self.getRefs(dmrepo, dmtags_re)
+          dcomponentsf = self.gitFilter(dcomponents)
+          rfile = DMFILE.format(m[0], dcomponentsf[-1][0])
+          file = os.path.join(self.cfg["workdir"], component, rfile)
           if(not os.path.exists(file)):
             url = DTAR.format(rfile)
             self.SaveFile(url, file)
-            print("Module {} saved".format(m[0]))
+            print("Project {} saved".format(m[0]))
           else:
-            print("Module {} from cache".format(m[0]))
+            print("Project {} from cache".format(m[0]))
         else:
 #           get heads
-          dmodules = self.getRefs(dmrepo, dmbranches_re)
-          dmodulesf = self.gitFilter(dmodules)
+          dcomponents = self.getRefs(dmrepo, dmbranches_re)
+          dcomponentsf = self.gitFilter(dcomponents)
           file = None
-        yield {"module": m[0], "file": file, "git": m[1], "branch": dmodulesf[-1][0]}
+        yield {"name": m[0], "file": file, "git": m[1], "branch": dcomponentsf[-1][0]}
     else:
       return
 
-  def SaveModules(self):
-    for _ in self.SaveModule():
+  def SaveProjects(self, component):
+    for _ in self.SaveProject(component):
       pass
-
-  def installModules(self):
+    
+#   def installProject(self, component):
+#     basepath = os.path.normpath(self.cfg["path"])
+#     if(component=="modules"):
+#       componentpath = os.path.join(basepath, "modules/contrib")
+#     elif(component=="themes"):
+#       componentpath = os.path.join(basepath, "themes/contrib")
+    
+  def installProjects(self, component):
     basepath = os.path.normpath(self.cfg["path"])
-    modulepath = os.path.join(basepath, "modules/contrib")
-    for m in self.SaveModule():
-      repo = DMREPOSITORY.format(m["module"])
-      mdir = os.path.join(modulepath, m["module"]) 
+    componentpath = os.path.join(basepath, component, "contrib")
+    for m in self.SaveProject(component):
+      repo = DPREPOSITORY.format(m["name"])
+      mdir = os.path.join(componentpath, m["name"]) 
       if m["git"] == 'g':
-        print("shallow clone {}".format(m["module"]))
+        print("shallow clone {}".format(m["name"]))
         p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
         if(p.returncode == 0):
-          print("Modules {} cloning OK".format(m["module"]))
+          print("Projects {} cloning OK".format(m["name"]))
         else:
           print(p)
       elif m["git"] == 'f':
-        print("full clone {}".format(m["module"]))
+        print("full clone {}".format(m["name"]))
         p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
         if(p.returncode == 0):
-          print("Modules {} cloning OK".format(m["module"]))
+          print("Projects {} cloning OK".format(m["name"]))
         else:
           print(p)
       else:
-        print("Unpacking module {}".format(m["module"]))
+        print("Unpacking project {}".format(m["name"]))
         tar = tarfile.open(m['file'], 'r:gz')
-        tar.extractall(path=modulepath)
-        print("Module {} unpacked".format(m["module"]))
+        tar.extractall(path=componentpath)
+        print("Project {} unpacked".format(m["name"]))
 
-
-  def enableModules(self):
+  def enableProjects(self, component):
     pass
 #     if self.cfg.get("modules", None) is not None:
 #       mod = ",".join(self.cfg["modules"])
 #       p = subprocess.run(["drush", "en", mod], cwd=self.cfg["path"])
 #       if(p.returncode == 0):
-#         print("Modules OK")
+#         print("Projects OK")
 #       else:
 #         print(p)
 
@@ -275,9 +288,15 @@ class Drupal():
       print(p)
     os.chmod(cfgdir, st_mode)
 
-  def composerModules(self):
-    if self.modules is not None:
-      packages = list(map(lambda m: "drupal/{}".format(m[0]), self.modules))
+  def composerProjects(self, component):
+    if(component=="modules"):
+      components = self.modules
+    elif(component=="themes"):
+      components = self.themes
+    else:
+      components = None
+    if components is not None:
+      packages = list(map(lambda m: "drupal/{}".format(m[0]), components))
       self.composerPackages(packages)
 
   def createConnection(self):
@@ -351,7 +370,7 @@ class Drupal():
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
-    description='install drupal and a list of modules',
+    description='install drupal and a list of modules and themes',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   parser.add_argument('-b', '--base',
@@ -375,7 +394,12 @@ if __name__ == "__main__":
                         dest='modules',
                         metavar='MODULE,g',
                         nargs='*',
-                        help='list of modules to be installed, g install from git HEAD')
+                        help='list of modules to be installed, g|f install from git HEAD')
+  parser.add_argument('-t', '--themes',
+                        dest='themes',
+                        metavar='THEME,g',
+                        nargs='*',
+                        help='list of themes to be installed, g|f install from git HEAD')
   parser.add_argument('-p', '--path',
                         dest='path',
                         metavar='PATH',
@@ -416,6 +440,7 @@ if __name__ == "__main__":
   cfg["release"] = cfg.get("release", None) if args.release is None else args.release
   cfg["git"] = cfg.get("git", None) if args.git is None else args.git
   cfg["modules"] = cfg.get("modules", None) if args.modules is None else args.modules
+  cfg["themes"] = cfg.get("themes", None) if args.themes is None else args.themes
   cfg["path"] = cfg.get("path", None) if args.path is None else args.path
   cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
@@ -432,13 +457,17 @@ if __name__ == "__main__":
   d.createWorkingDir()
 
   if (action == 'modules'):
-    d.SaveModules()
+    d.SaveProjects("modules")
+  elif(action == 'themes'):
+    d.SaveProjects("themes")
   elif(action == 'download'):
     d.SaveCore()
-    d.SaveModules()
+    d.SaveProjects("modules")
+    d.SaveProjects("themes")
   elif(action == 'unpack'):
     d.installCore()
-    d.installModules()
+    d.installProjects("modules")
+    d.installProjects("themes")
     if(cfg["drush"]):
       d.Drush()
   elif(action == 'db'):
@@ -446,23 +475,28 @@ if __name__ == "__main__":
     d.installCore()
     if(cfg["drush"]):
       d.Drush()
-    d.installModules()
+    d.installProjects("modules")
+    d.installProjects("themes")
   elif(action == 'install'):
     d.setupDB()
     d.installCore()
     d.Drush()
     d.enableCore()
-    d.installModules()
+    d.installProjects("modules")
+    d.installProjects("themes")
     if(cfg["enable_modules"]):
-      d.enableModules()
+      d.enableProjects("modules")
+      d.enableProjects("themes")
   elif(action == 'composer'):
     d.setupDB()
     d.installCore()
     d.Drush()
     d.enableCore()
-    d.composerModules()
+    d.composerProjects("modules")
+    d.composerProjects("themes")
     if(cfg["enable_modules"]):
-      d.enableModules()
+      d.enableProjects("modules")
+      d.enableProjects("themes")
   elif(action == 'wipe'):
     d.Cleanup()
     
