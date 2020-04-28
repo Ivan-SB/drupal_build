@@ -447,7 +447,8 @@ if __name__ == "__main__":
   cfg["check"] = cfg.get("check", None) if args.check is None else args.check
   cfg["enable_modules"] = cfg.get("enable_modules", None) if args.enable_modules is None else args.enable_modules
     
-  action = args.action
+  cfg["action"] = cfg.get("action", None) if args.action is None else args.action
+  action = cfg["action"] 
 
   g = git.cmd.Git()
 
