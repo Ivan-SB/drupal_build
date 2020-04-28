@@ -15,15 +15,22 @@ db:
    user: test1
    db: test1
    passwd: OTHERWISEGENERATED
-drush: True # install drush
 modules:
    # list of modules to download/install/enable
-   - module1
+   # g for git shallow clone
+   # f for git full clone
+   # nothing use tar or composer according to install
+   - module1,g
+   - module2,f
    - module2
 themes:
    #list of themes to download/install/enable
-   - theme1
-   - theme2
+   # g for git shallow clone
+   # f for git full clone
+   # nothing use tar or composer according to install
+   - theme1,g
+   - theme2,f
+   - theme3
 # where archives will be saved, could be used as a chache
 # OS temporary directory if not specified
 workdir: PATHTOWORKDIR
@@ -34,3 +41,5 @@ site:
    admin-passwd: XXXXXXXXXXXX
    site-mail: info@webthatworks.it
    site-name: WebThatWorks.it
+drush: yes # install drush
+check: yes #install drupal-check
