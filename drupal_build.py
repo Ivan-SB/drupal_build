@@ -51,7 +51,7 @@ DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
 # https://ftp.drupal.org/files/projects/views_bulk_operations-8.x-3.x-dev.tar.gz
 
-releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4, '': 4 }
+releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4, '': 4, 'x': 4 }
 
 # 9.0.0-beta2
 # 5 4 3    21
@@ -60,7 +60,7 @@ releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4, '': 4 }
 dctags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 dcbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.([0-9x]+)?\.?([0-9x]+)?)()()().*")
 dmtags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
-dmbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
+dmbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.([0-9x]+)?-([0-9x]+)?\.?([0-9x]+)?)()().*")
 
 class OnBreak():
   kill_now = False
@@ -81,10 +81,18 @@ def zeroOnNoneX(x):
 
 class Drupal():
 
+  def _unpackModules(self, modules):
+#     always return a list with 2 elements (module name, git flag)
+    if modules is not None:
+      return list(map(lambda m: m.partition(',')[0:3:2], modules))
+    else:
+      return None
+
   def __init__(self, cfg):
     self.cfg = cfg
     self.conn = None
     self.http = None
+    self.modules = self._unpackModules(cfg["modules"]) 
 
   def gitFilter(self, vl):
     if(self.cfg["base"] is not None):
@@ -186,21 +194,28 @@ class Drupal():
       print(p)
 
   def SaveModule(self):
-    if self.cfg.get("modules", None) is not None:
-      for m in self.cfg['modules']:
-        print("Saving module {}".format(m))
-        dmrepo = DMREPOSITORY.format(m)
-        dmodules = self.getRefs(dmrepo, dmtags_re)
-        dmodulesf = self.gitFilter(dmodules)
-        rfile = DMFILE.format(m, dmodulesf[-1][0])
-        file = os.path.join(self.cfg["workdir"], "modules", rfile)
-        if(not os.path.exists(file)):
-          url = DTAR.format(rfile)
-          self.SaveFile(url, file)
-          print("Module {} saved".format(m))
+    if self.modules is not None:
+      for m in self.modules:
+        dmrepo = DMREPOSITORY.format(m[0])
+#         get tags
+        if m[1] == '':
+          print("Saving module {}".format(m[0]))
+          dmodules = self.getRefs(dmrepo, dmtags_re)
+          dmodulesf = self.gitFilter(dmodules)
+          rfile = DMFILE.format(m[0], dmodulesf[-1][0])
+          file = os.path.join(self.cfg["workdir"], "modules", rfile)
+          if(not os.path.exists(file)):
+            url = DTAR.format(rfile)
+            self.SaveFile(url, file)
+            print("Module {} saved".format(m[0]))
+          else:
+            print("Module {} from cache".format(m[0]))
         else:
-          print("Module {} from cache".format(m))
-        yield {"module": m, "file": file}
+#           get heads
+          dmodules = self.getRefs(dmrepo, dmbranches_re)
+          dmodulesf = self.gitFilter(dmodules)
+          file = None
+        yield {"module": m[0], "file": file, "git": m[1], "branch": dmodulesf[-1][0]}
     else:
       return
 
@@ -210,12 +225,30 @@ class Drupal():
 
   def installModules(self):
     basepath = os.path.normpath(self.cfg["path"])
+    modulepath = os.path.join(basepath, "modules/contrib")
     for m in self.SaveModule():
-      print("Unpacking module {}".format(m["module"]))
-      modulepath = os.path.join(basepath, "modules/contrib")
-      tar = tarfile.open(m['file'], 'r:gz')
-      tar.extractall(path=modulepath)
-      print("Module {} unpacked".format(m["module"]))
+      repo = DMREPOSITORY.format(m["module"])
+      mdir = os.path.join(modulepath, m["module"]) 
+      if m["git"] == 'g':
+        print("shallow clone {}".format(m["module"]))
+        p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
+        if(p.returncode == 0):
+          print("Modules {} cloning OK".format(m["module"]))
+        else:
+          print(p)
+      elif m["git"] == 'f':
+        print("full clone {}".format(m["module"]))
+        p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
+        if(p.returncode == 0):
+          print("Modules {} cloning OK".format(m["module"]))
+        else:
+          print(p)
+      else:
+        print("Unpacking module {}".format(m["module"]))
+        tar = tarfile.open(m['file'], 'r:gz')
+        tar.extractall(path=modulepath)
+        print("Module {} unpacked".format(m["module"]))
+
 
   def enableModules(self):
     pass
@@ -243,8 +276,8 @@ class Drupal():
     os.chmod(cfgdir, st_mode)
 
   def composerModules(self):
-    if self.cfg.get("modules", None) is not None:
-      packages = list(map(lambda m: "drupal/{}".format(m), self.cfg["modules"]))
+    if self.modules is not None:
+      packages = list(map(lambda m: "drupal/{}".format(m[0]), self.modules))
       self.composerPackages(packages)
 
   def createConnection(self):
@@ -285,6 +318,7 @@ class Drupal():
     print("DB ready")
 
   def Drush(self):
+    print("Instaling Drush")
     p = subprocess.run(["composer", "require", "drush/drush"], cwd=self.cfg["path"])
     if(p.returncode == 0):
       print("Drush OK")
@@ -339,9 +373,9 @@ if __name__ == "__main__":
                         help='minimum required dev version (dev, alpha, beta, rc), stable if omitted')
   parser.add_argument('-m', '--modules',
                         dest='modules',
-                        metavar='MODULE',
+                        metavar='MODULE,g',
                         nargs='*',
-                        help='list of modules to be installed')
+                        help='list of modules to be installed, g install from git HEAD')
   parser.add_argument('-p', '--path',
                         dest='path',
                         metavar='PATH',
@@ -360,7 +394,7 @@ if __name__ == "__main__":
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('module', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
+                        choices=('modules', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
                         type=str.lower,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
   parser.add_argument('-e', '--enable',
@@ -380,6 +414,7 @@ if __name__ == "__main__":
 
   cfg["base"] = cfg.get("base", None) if args.base is None else args.base
   cfg["release"] = cfg.get("release", None) if args.release is None else args.release
+  cfg["git"] = cfg.get("git", None) if args.git is None else args.git
   cfg["modules"] = cfg.get("modules", None) if args.modules is None else args.modules
   cfg["path"] = cfg.get("path", None) if args.path is None else args.path
   cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
@@ -396,7 +431,7 @@ if __name__ == "__main__":
 
   d.createWorkingDir()
 
-  if (action == 'module'):
+  if (action == 'modules'):
     d.SaveModules()
   elif(action == 'download'):
     d.SaveCore()
@@ -431,7 +466,7 @@ if __name__ == "__main__":
   elif(action == 'wipe'):
     d.Cleanup()
     
-  if(cfg["check"]):
+  if(cfg["check"] and action != 'wipe'):
     d.DrupalCheck()
 
   print("FINISH")
