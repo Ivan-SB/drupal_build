@@ -41,7 +41,7 @@ import yaml
 import argparse
 import getpass
 
-import pprint
+# import pprint
 
 DREPOSITORY = "https://git.drupal.org/project/drupal.git"
 DPREPOSITORY = "https://git.drupalcode.org/project/{}.git"
@@ -49,14 +49,9 @@ DFILE = "drupal-{}.tar.gz"
 DDIR = "drupal-{}"
 DMFILE = "{}-{}.tar.gz"
 DTAR = "https://ftp.drupal.org/files/projects/{}"
-# https://ftp.drupal.org/files/projects/views_bulk_operations-8.x-3.x-dev.tar.gz
 
 releases = { 'dev': 0, 'alpha': 1, 'beta': 2, 'rc': 3, None: 4, '': 4, 'x': 4 }
 
-# 9.0.0-beta2
-# 5 4 3    21
-# 7.0-unstable-10 not supported
-# 7.0-alpha7
 dctags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.([0-9]+)\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
 dcbranches_re = re.compile(r"[^ \t]+[ \t]+refs/heads/(([0-9]+)\.([0-9x]+)?\.?([0-9x]+)?)()()().*")
 dmtags_re = re.compile(r"[^ \t]+[ \t]+refs/tags/(([0-9]+)\.x-([0-9]+)?\.?([0-9]+)?-?(dev|alpha|beta|rc)?([0-9]+)?).*")
@@ -74,13 +69,12 @@ class OnBreak():
 #     SOME ACTION
     sys.exit(0)
 
-
 def zeroOnNoneX(x):
   t = 0 if(x == "x" or x == '') else x
   return int(t) if t is not None else 0
 
-class Drupal():
 
+class Drupal():
   def _unpackProjects(self, components):
 #     always return a list with 2 elements (component name, git flag)
     if components is not None:
@@ -171,12 +165,12 @@ class Drupal():
 
   def enableCore(self):
     print("Enabling Core")
-    dbstring="mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
+    dbstring = "mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
                                                    self.cfg["db"]["passwd"],
                                                    self.cfg["db"]["host"],
                                                    self.cfg["db"]["db"])
 #     drush seems to need shell
-    sstring=" ".join(("drush",
+    sstring = " ".join(("drush",
                       "site-install",
                       self.cfg["site"]["type"],
                       "--yes",
@@ -188,16 +182,16 @@ class Drupal():
                       "--site-mail", self.cfg["site"]["site-mail"],
                       "--site-name", self.cfg["site"]["site-name"],
                         ))
-    p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True) 
+    p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
     if(p.returncode == 0):
       print("Core enabled")
     else:
       print(p)
 
   def SaveProject(self, component):
-    if(component=="modules"):
+    if(component == "modules"):
       components = self.modules
-    elif(component=="themes"):
+    elif(component == "themes"):
       components = self.themes
     else:
       components = None
@@ -229,20 +223,20 @@ class Drupal():
   def SaveProjects(self, component):
     for _ in self.SaveProject(component):
       pass
-    
+
 #   def installProject(self, component):
 #     basepath = os.path.normpath(self.cfg["path"])
 #     if(component=="modules"):
 #       componentpath = os.path.join(basepath, "modules/contrib")
 #     elif(component=="themes"):
 #       componentpath = os.path.join(basepath, "themes/contrib")
-    
+
   def installProjects(self, component):
     basepath = os.path.normpath(self.cfg["path"])
     componentpath = os.path.join(basepath, component, "contrib")
     for m in self.SaveProject(component):
       repo = DPREPOSITORY.format(m["name"])
-      mdir = os.path.join(componentpath, m["name"]) 
+      mdir = os.path.join(componentpath, m["name"])
       if m["git"] == 'g':
         print("shallow clone {}".format(m["name"]))
         p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
@@ -289,9 +283,9 @@ class Drupal():
     os.chmod(cfgdir, st_mode)
 
   def composerProjects(self, component):
-    if(component=="modules"):
+    if(component == "modules"):
       components = self.modules
-    elif(component=="themes"):
+    elif(component == "themes"):
       components = self.themes
     else:
       components = None
@@ -343,14 +337,14 @@ class Drupal():
       print("Drush OK")
     else:
       print(p)
-  
+
   def DrupalCheck(self):
-    if(int(cfg["base"])>8): 
+    if(int(cfg["base"]) > 8):
       self.composerPackages(["--dev", "phpunit/phpunit", "mglaman/drupal-check"])
     else:
       self.composerPackages(["phpunit/phpunit", "^7"])
       self.composerPackages(["--dev", "mglaman/drupal-check"])
-  
+
   def cleanupDB(self):
     print("Cleaning up DB")
     self.createConnection()
@@ -360,7 +354,7 @@ class Drupal():
     self.cur.execute("drop user if exists %s@%s", (user, host,))
     self.cur.execute('drop database if exists {};'.format(db))
     print("DB cleaned up")
-  
+
   def cleanupDir(self):
     print("Changing permissions")
     for r, d, f in os.walk(cfg["path"]):
@@ -375,10 +369,11 @@ class Drupal():
     print("Removing files")
     shutil.rmtree(cfg["path"])
     print("Files removed")
-      
+
   def Cleanup(self):
     self.cleanupDB()
     self.cleanupDir()
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -392,7 +387,9 @@ if __name__ == "__main__":
                         type=int)
   parser.add_argument('-s', '--drush',
                         dest='drush',
-                        action='store_true',
+                        action='store_const',
+                        const=True,
+                        default=None,
                         help='install drush')
   parser.add_argument('-g', '--git',
                         dest='git',
@@ -430,7 +427,7 @@ if __name__ == "__main__":
                         help='path to yaml config file')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('modules', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
+                        choices=('none', 'modules', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
                         type=str.lower,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
   parser.add_argument('-e', '--enable',
@@ -439,7 +436,9 @@ if __name__ == "__main__":
                         help='enable modules')
   parser.add_argument('-k', '--check',
                         dest='check',
-                        action='store_true',
+                        action='store_const',
+                        const=True,
+                        default=None,
                         help='install drupal-check')
 
   args = parser.parse_args()
@@ -458,9 +457,9 @@ if __name__ == "__main__":
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
   cfg["check"] = cfg.get("check", None) if args.check is None else args.check
   cfg["enable_modules"] = cfg.get("enable_modules", None) if args.enable_modules is None else args.enable_modules
-    
+
   cfg["action"] = cfg.get("action", None) if args.action is None else args.action
-  action = cfg["action"] 
+  action = cfg["action"]
 
   g = git.cmd.Git()
 
@@ -512,7 +511,7 @@ if __name__ == "__main__":
       d.enableProjects("themes")
   elif(action == 'wipe'):
     d.Cleanup()
-    
+
   if(cfg["check"] and (action != 'wipe')):
     d.DrupalCheck()
 
