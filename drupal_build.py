@@ -278,7 +278,7 @@ class Drupal():
     cfgdir = os.path.join(self.cfg["path"], "sites", "default")
     pstring = ", ".join(packages)
     st_mode = os.stat(cfgdir).st_mode
-    os.chmod(cfgdir, st_mode | stat.S_IWUSR | stat.S_IWGRP)
+    os.chmod(cfgdir, st_mode | stat.S_IWUSR)
     print("Installing packages {} via composer".format(pstring))
     crequire.extend(packages)
     p = subprocess.run(crequire, cwd=self.cfg["path"])
@@ -357,16 +357,28 @@ class Drupal():
     host = self.cfg["db"]["host"]
     user = self.cfg["db"]["user"]
     db = self.cfg["db"]["db"]
-    self.cur.execute("drop user %s@%s", (user, host,))
-    self.cur.execute('drop database {};'.format(db))
+    self.cur.execute("drop user if exists %s@%s", (user, host,))
+    self.cur.execute('drop database if exists {};'.format(db))
     print("DB cleaned up")
-      
-  def Cleanup(self):
-    self.cleanupDB()
-#     TODO files may be write-protected, not enough to change ownership
+  
+  def cleanupDir(self):
+    print("Changing permissions")
+    for r, d, f in os.walk(cfg["path"]):
+      for ld in d:
+        ldpath = os.path.join(r, ld)
+        ldpermissions = os.stat(ldpath).st_mode
+        os.chmod(ldpath, ldpermissions | stat.S_IWUSR)
+      for lf in f:
+        lfpath = os.path.join(r, lf)
+        lfpermission = os.stat(lfpath).st_mode
+        os.chmod(lfpath, lfpermission | stat.S_IWUSR)
     print("Removing files")
     shutil.rmtree(cfg["path"])
     print("Files removed")
+      
+  def Cleanup(self):
+    self.cleanupDB()
+    self.cleanupDir()
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -501,7 +513,7 @@ if __name__ == "__main__":
   elif(action == 'wipe'):
     d.Cleanup()
     
-  if(cfg["check"] and action != 'wipe'):
+  if(cfg["check"] and (action != 'wipe')):
     d.DrupalCheck()
 
   print("FINISH")
