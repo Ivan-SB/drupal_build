@@ -12,6 +12,7 @@ db_admin:
       cert: /PATHTO/mysql-client.pem
       ca: /PATHTO/ca-cert.pem
 db:
+   driver: pgsql
    user: test1
    db: test1
    passwd: OTHERWISEGENERATED

@@ -36,6 +36,8 @@ import git
 import tarfile
 
 import MySQLdb
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 import yaml
 import argparse
@@ -75,6 +77,7 @@ def zeroOnNoneX(x):
 
 
 class Drupal():
+
   def _unpackProjects(self, components):
 #     always return a list with 2 elements (component name, git flag)
     if components is not None:
@@ -165,22 +168,23 @@ class Drupal():
 
   def enableCore(self):
     print("Enabling Core")
-    dbstring = "mysql://{}:{}@{}/{}".format(self.cfg["db"]["user"],
-                                                   self.cfg["db"]["passwd"],
-                                                   self.cfg["db"]["host"],
-                                                   self.cfg["db"]["db"])
+    dbstring = "{}://{}:{}@{}/{}".format(self.cfg["db"]["driver"],
+                                                  self.cfg["db"]["user"],
+                                                  self.cfg["db"]["passwd"],
+                                                  self.cfg["db"]["host"],
+                                                  self.cfg["db"]["db"])
 #     drush seems to need shell
     sstring = " ".join(("drush",
-                      "site-install",
-                      self.cfg["site"]["type"],
-                      "--yes",
-                      "--db-url",
-                      dbstring,
-                      "--account-mail", self.cfg["site"]["admin-mail"],
-                      "--account-name", self.cfg["site"]["admin-name"],
-                      "--account-pass", self.cfg["site"]["admin-passwd"],
-                      "--site-mail", self.cfg["site"]["site-mail"],
-                      "--site-name", self.cfg["site"]["site-name"],
+                        "site-install",
+                        self.cfg["site"]["type"],
+                        "--yes",
+                        "--db-url",
+                        dbstring,
+                        "--account-mail", self.cfg["site"]["admin-mail"],
+                        "--account-name", self.cfg["site"]["admin-name"],
+                        "--account-pass", self.cfg["site"]["admin-passwd"],
+                        "--site-mail", self.cfg["site"]["site-mail"],
+                        "--site-name", self.cfg["site"]["site-name"],
                         ))
     p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
     if(p.returncode == 0):
@@ -293,19 +297,47 @@ class Drupal():
       packages = list(map(lambda m: "drupal/{}".format(m[0]), components))
       self.composerPackages(packages)
 
+  def createConnectionPG(self):
+    ssl = self.cfg["db_admin"].get("ssl", None)
+#     print('DB superuser credentials')
+#     pwd = getpass.getpass(prompt='Password for user: ')
+#     pwd = None
+    if ssl is not None:
+      key = ssl.get("key", None)
+      cert = ssl.get("cert", None)
+      ca = ssl.get("ca", None)
+    else:
+      key = None
+      cert = None
+      ca = None
+#     TODO creating a connection with template1 makes other connection fail?
+    self.conn = psycopg2.connect(
+                                dbname="postgres",
+#                                host=self.cfg["db_admin"]["host"],
+                                user=self.cfg["db_admin"]["user"],
+    #                             password=pwd,    
+                                sslrootcert=ca, sslcert=cert, sslkey=key)
+    self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    self.cur = self.conn.cursor()
+
+  def createConnectionMySQL(self):
+    print('DB superuser credentials')
+    pwd = getpass.getpass(prompt='Password for user: ')
+    self.conn = MySQLdb.connect(host=self.cfg["db_admin"]["host"],
+                                user=self.cfg["db_admin"]["user"],
+                                passwd=pwd,
+                                ssl=self.cfg["db_admin"].get("ssl", None)
+                              )
+    self.cur = self.conn.cursor()
+
   def createConnection(self):
     if self.conn is None:
-      adminuser = self.cfg["db_admin"]["user"]
-      connhost = self.cfg["db_admin"]["host"]
-      ssl = self.cfg["db_admin"].get("ssl", None)
-      print('DB superuser credentials')
-      pwd = getpass.getpass(prompt='Password for user: ')
-      self.conn = MySQLdb.connect(host=connhost, user=adminuser, passwd=pwd,
-                                ssl=ssl
-                                )
-      self.cur = self.conn.cursor()
-
-  def createUser(self):
+      if (self.cfg["db"]["driver"] == "mysql"):
+        self.createConnectionMySQL()
+      elif (self.cfg["db"]["driver"] == "pgsql"):
+        self.createConnectionPG()
+  
+  def createUserMySQL(self):
     host = self.cfg["db"]["host"]
     user = self.cfg["db"]["user"]
     #     TODO generate or get passwd
@@ -318,16 +350,31 @@ class Drupal():
         create temporary tables on {}.* to %s@%s
         """.format(db), (user, host,))
     self.cur.execute("flush privileges")
-
-  def createDB(self):
+    
+  def createUserPG(self):
+    user = self.cfg["db"]["user"]
+    #     TODO generate or get passwd
+    passwd = self.cfg["db"]["passwd"]
+    self.cur.execute("create user {} nocreaterole nocreatedb encrypted password '{}'".format(user, passwd))
+  
+  def createDBMySQL(self):
     db = self.cfg["db"]["db"]
-    self.cur.execute('create database if not exists {};'.format(db))
+    self.cur.execute('create database {};'.format(db))
+  
+  def createDBPG(self):
+    db = self.cfg["db"]["db"]
+    user = self.cfg["db"]["user"]
+    self.cur.execute('create database {} with owner {}'.format(db, user))
 
   def setupDB(self):
     print("Setting up DB")
     self.createConnection()
-    self.createDB()
-    self.createUser()
+    if (self.cfg["db"]["driver"] == "mysql"):
+      self.createDBMySQL()
+      self.createUserMySQL()
+    elif (self.cfg["db"]["driver"] == "pgsql"):
+      self.createUserPG()
+      self.createDBPG()
     print("DB ready")
 
   def Drush(self):
@@ -344,15 +391,25 @@ class Drupal():
     else:
       self.composerPackages(["phpunit/phpunit", "^7"])
       self.composerPackages(["--dev", "mglaman/drupal-check"])
+      
+  def dropUserMySQL(self, user):
+    host = self.cfg["db"]["host"]
+    self.cur.execute("drop user if exists %s@%s", (user, host,))
+  
+  def dropUserPG(self, user):
+#     self.cur.execute("drop user if exists %s", (user,))
+    self.cur.execute("drop user if exists {}".format(user))
 
   def cleanupDB(self):
     print("Cleaning up DB")
     self.createConnection()
-    host = self.cfg["db"]["host"]
     user = self.cfg["db"]["user"]
     db = self.cfg["db"]["db"]
-    self.cur.execute("drop user if exists %s@%s", (user, host,))
     self.cur.execute('drop database if exists {};'.format(db))
+    if (self.cfg["db"]["driver"] == "mysql"):
+      self.dropUserMySQL(self, user)
+    elif (self.cfg["db"]["driver"] == "pgsql"):
+      self.dropUserPG(user)
     print("DB cleaned up")
 
   def cleanupDir(self):
@@ -361,11 +418,19 @@ class Drupal():
       for ld in d:
         ldpath = os.path.join(r, ld)
         ldpermissions = os.stat(ldpath).st_mode
-        os.chmod(ldpath, ldpermissions | stat.S_IWUSR)
+        try:
+          os.chmod(ldpath, ldpermissions | stat.S_IWUSR)
+        except PermissionError:
+          # TODO improve reporting permission errors
+          print("PermissionError, check if everything has been deleted")
       for lf in f:
         lfpath = os.path.join(r, lf)
         lfpermission = os.stat(lfpath).st_mode
-        os.chmod(lfpath, lfpermission | stat.S_IWUSR)
+        try:
+          os.chmod(lfpath, lfpermission | stat.S_IWUSR)
+        except PermissionError:
+          # TODO improve reporting permission errors
+          print("PermissionError, check if everything has been deleted")
     print("Removing files")
     shutil.rmtree(cfg["path"])
     print("Files removed")
@@ -373,7 +438,6 @@ class Drupal():
   def Cleanup(self):
     self.cleanupDB()
     self.cleanupDir()
-
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
