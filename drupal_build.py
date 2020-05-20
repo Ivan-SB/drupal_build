@@ -77,7 +77,6 @@ def zeroOnNoneX(x):
 
 
 class Drupal():
-
   def _unpackProjects(self, components):
 #     always return a list with 2 elements (component name, git flag)
     if components is not None:
@@ -215,8 +214,14 @@ class Drupal():
             print("Project {} saved".format(m[0]))
           else:
             print("Project {} from cache".format(m[0]))
-        else:
+        elif(m[1]=='g' or m[1]=='f'):
 #           get heads
+          dcomponents = self.getRefs(dmrepo, dmbranches_re)
+          dcomponentsf = self.gitFilter(dcomponents)
+          file = None
+        elif(m[1]=='i'):
+#           get heads
+          dmrepo = cfg["repo"] + m[0] + '.git'
           dcomponents = self.getRefs(dmrepo, dmbranches_re)
           dcomponentsf = self.gitFilter(dcomponents)
           file = None
@@ -248,9 +253,9 @@ class Drupal():
           print("Projects {} cloning OK".format(m["name"]))
         else:
           print(p)
-      elif m["git"] == 'f':
+      elif (m["git"] == 'f' or m["git"] == 'i') :
         print("full clone {}".format(m["name"]))
-        p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
+        p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
         if(p.returncode == 0):
           print("Projects {} cloning OK".format(m["name"]))
         else:
@@ -489,13 +494,24 @@ if __name__ == "__main__":
                         dest='config',
                         metavar='FILE',
                         help='path to yaml config file')
+  parser.add_argument('-i', '--repo',
+                        dest='repo',
+                        metavar='REPO',
+                        help='path to internal repo')
   parser.add_argument('-a', '--action',
                         dest='action',
-                        choices=('none', 'modules', 'download', 'unpack', 'db', 'install', 'composer', 'wipe'),
+                        choices=('none'
+                                 , 'modules'
+                                 , 'download'
+                                 , 'unpack'
+                                 , 'db'
+                                 , 'install'
+                                 , 'composer'
+                                 , 'wipe'),
                         type=str.lower,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
   parser.add_argument('-e', '--enable',
-                        dest='enable_modules',
+                        dest='enable_projects',
                         action='store_true',
                         help='enable modules')
   parser.add_argument('-k', '--check',
@@ -517,10 +533,11 @@ if __name__ == "__main__":
   cfg["modules"] = cfg.get("modules", None) if args.modules is None else args.modules
   cfg["themes"] = cfg.get("themes", None) if args.themes is None else args.themes
   cfg["path"] = cfg.get("path", None) if args.path is None else args.path
+  cfg["repo"] = cfg.get("repo", None) if args.repo is None else args.repo
   cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
   cfg["check"] = cfg.get("check", None) if args.check is None else args.check
-  cfg["enable_modules"] = cfg.get("enable_modules", None) if args.enable_modules is None else args.enable_modules
+  cfg["enable_projects"] = cfg.get("enable_projects", None) if args.enable_projects is None else args.enable_projects
 
   cfg["action"] = cfg.get("action", None) if args.action is None else args.action
   action = cfg["action"]
@@ -560,7 +577,7 @@ if __name__ == "__main__":
     d.enableCore()
     d.installProjects("modules")
     d.installProjects("themes")
-    if(cfg["enable_modules"]):
+    if(cfg["enable_projects"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
   elif(action == 'composer'):
@@ -570,7 +587,7 @@ if __name__ == "__main__":
     d.enableCore()
     d.composerProjects("modules")
     d.composerProjects("themes")
-    if(cfg["enable_modules"]):
+    if(cfg["enable_projects"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
   elif(action == 'wipe'):

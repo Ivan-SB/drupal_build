@@ -1,8 +1,9 @@
-# download, unpack, install, composer
+# none, modules, download, unpack, db, install, composer, wipe
 action: install
 path: PATHTOINSTALLATION # directory where drupal will be installed
 base: 8 # pick the newer version of this base version
 release: alpha # stable if none otherwise no less than specified (dev, alpha, beta, rc)
+repo: BASEURL # for internal repo (assume ssh and key with no password or ssh-agent running)
 db_admin:
    user: USER
    host: HOST
@@ -20,6 +21,7 @@ modules:
    # list of modules to download/install/enable
    # g for git shallow clone
    # f for git full clone
+   # i fot internal repo
    # nothing use tar or composer according to install
    - module1,g
    - module2,f
