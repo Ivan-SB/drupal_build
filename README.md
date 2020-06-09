@@ -18,3 +18,5 @@ It can install modules and themes by varous means (unpack archives, composer, gi
 It uses a yaml configuration file whose entries can be overwritten by command line paramethers
 
 It automatically chose the latest available release (stable or dev) for the specified version of Drupal
+
+It support an "internal" repo

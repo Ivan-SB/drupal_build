@@ -20,6 +20,8 @@ with open('test.txt', 'w') as f:
 import os
 import stat
 
+import grp
+
 import shutil
 import sys
 import signal
@@ -75,8 +77,18 @@ def zeroOnNoneX(x):
   t = 0 if(x == "x" or x == '') else x
   return int(t) if t is not None else 0
 
-
 class Drupal():
+#   def _unpackProjects(self, components):
+#     t = None
+#     arg = []
+#     while True: 
+#       temp = t.partition(',')[0:3:2] 
+#       arg.append(temp[0]) 
+#       if temp[1] is None or temp[1]=='': 
+#         break 
+#       t = temp[1]
+#     return arg
+
   def _unpackProjects(self, components):
 #     always return a list with 2 elements (component name, git flag)
     if components is not None:
@@ -91,9 +103,9 @@ class Drupal():
     self.modules = self._unpackProjects(cfg["modules"])
     self.themes = self._unpackProjects(cfg["themes"])
 
-  def gitFilter(self, vl):
-    if(self.cfg["base"] is not None):
-      vl = [v for v in vl if (v[1][0] >= self.cfg["base"] * 100 ** 4 and v[1][0] < (self.cfg["base"] + 1) * 100 ** 4)]
+  def gitFilter(self, vl, base):
+    if(base is not None):
+      vl = [v for v in vl if (v[1][0] >= base * 100 ** 4 and v[1][0] < (base + 1) * 100 ** 4)]
     vl = [v for v in vl if (v[1][1][1] >= releases[self.cfg["release"]])]
     return vl
 
@@ -143,7 +155,8 @@ class Drupal():
   def SaveCore(self):
     print("Saving Core")
     dcore = d.getRefs(DREPOSITORY, dctags_re)
-    self.dcoref = d.gitFilter(dcore)
+    self.dcoref = d.gitFilter(dcore, self.cfg["base"])
+    print("Drupal core {}".format(self.dcoref[-1][0]))
     rfile = DFILE.format(self.dcoref[-1][0])
     file = os.path.join(self.cfg["workdir"], "core", rfile)
     if(not os.path.exists(file)):
@@ -192,6 +205,10 @@ class Drupal():
       print(p)
 
   def SaveProject(self, component):
+    if(self.cfg["base"] == 9):
+      base = 8
+    else:
+      base = self.cfg["base"]
     if(component == "modules"):
       components = self.modules
     elif(component == "themes"):
@@ -205,7 +222,7 @@ class Drupal():
         if m[1] == '':
           print("Saving component {}".format(m[0]))
           dcomponents = self.getRefs(dmrepo, dmtags_re)
-          dcomponentsf = self.gitFilter(dcomponents)
+          dcomponentsf = self.gitFilter(dcomponents, base)
           rfile = DMFILE.format(m[0], dcomponentsf[-1][0])
           file = os.path.join(self.cfg["workdir"], component, rfile)
           if(not os.path.exists(file)):
@@ -217,14 +234,15 @@ class Drupal():
         elif(m[1]=='g' or m[1]=='f'):
 #           get heads
           dcomponents = self.getRefs(dmrepo, dmbranches_re)
-          dcomponentsf = self.gitFilter(dcomponents)
+          dcomponentsf = self.gitFilter(dcomponents, base)
           file = None
         elif(m[1]=='i'):
 #           get heads
           dmrepo = cfg["repo"] + m[0] + '.git'
           dcomponents = self.getRefs(dmrepo, dmbranches_re)
-          dcomponentsf = self.gitFilter(dcomponents)
+          dcomponentsf = self.gitFilter(dcomponents, base)
           file = None
+        print("{} {}".format(m[0], dcomponentsf[-1][0]))
         yield {"name": m[0], "file": file, "git": m[1], "branch": dcomponentsf[-1][0]}
     else:
       return
@@ -232,13 +250,6 @@ class Drupal():
   def SaveProjects(self, component):
     for _ in self.SaveProject(component):
       pass
-
-#   def installProject(self, component):
-#     basepath = os.path.normpath(self.cfg["path"])
-#     if(component=="modules"):
-#       componentpath = os.path.join(basepath, "modules/contrib")
-#     elif(component=="themes"):
-#       componentpath = os.path.join(basepath, "themes/contrib")
 
   def installProjects(self, component):
     basepath = os.path.normpath(self.cfg["path"])
@@ -267,14 +278,14 @@ class Drupal():
         print("Project {} unpacked".format(m["name"]))
 
   def enableProjects(self, component):
-    pass
-#     if self.cfg.get("modules", None) is not None:
-#       mod = ",".join(self.cfg["modules"])
-#       p = subprocess.run(["drush", "en", mod], cwd=self.cfg["path"])
-#       if(p.returncode == 0):
-#         print("Projects OK")
-#       else:
-#         print(p)
+    if self.cfg.get("modules", None) is not None:
+      mod = ",".join(self.cfg["modules"])
+      sstring = " ".join(["drush", "en", mod])
+      p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
+      if(p.returncode == 0):
+        print("Projects OK")
+      else:
+        print(p)
 
   def composerPackages(self, packages):
     crequire = ["composer", "require"]
@@ -443,6 +454,38 @@ class Drupal():
   def Cleanup(self):
     self.cleanupDB()
     self.cleanupDir()
+  
+  def getGID(self):
+    # TODO find a better way to get which group to use to assign ownership
+    gid = grp.getgrnam('www-data').gr_gid
+    return gid
+  
+  def Setup(self):
+    print("Changing ownership")
+    uid = os.getuid()
+    gid = self.getGID()
+    for r, d, f in os.walk(cfg["path"]):
+      for ld in d:
+        ldpath = os.path.join(r, ld)
+        try:
+          os.chown(ldpath, uid, gid)
+        except PermissionError:
+          # TODO improve reporting permission errors
+          print("PermissionError, check if everything has correct ownership")
+      for lf in f:
+        lfpath = os.path.join(r, lf)
+        try:
+          os.chown(lfpath, uid, gid)
+        except PermissionError:
+          # TODO improve reporting permission errors
+          print("PermissionError, check if everything has correct ownership")
+    print("Rebuilding cache")
+    p = subprocess.run("drush cr", cwd=self.cfg["path"], shell=True, check=True)
+    if(p.returncode == 0):
+      print("Rebuilding cache OK")
+    else:
+      print(p)
+    
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -593,7 +636,10 @@ if __name__ == "__main__":
   elif(action == 'wipe'):
     d.Cleanup()
 
-  if(cfg["check"] and (action != 'wipe')):
-    d.DrupalCheck()
+  notinstalled = [ 'none', 'modules', 'download', 'wipe', None ]
+  if (action not in notinstalled):
+    if(cfg["check"]):
+      d.DrupalCheck()
+    d.Setup()
 
   print("FINISH")
