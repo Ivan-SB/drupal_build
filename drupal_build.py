@@ -187,7 +187,7 @@ class Drupal():
                                                   self.cfg["db"]["db"])
 #     drush seems to need shell
     sstring = " ".join(("drush",
-                        "site-install",
+                        "site:install",
                         self.cfg["site"]["type"],
                         "--yes",
                         "--db-url",
@@ -198,11 +198,82 @@ class Drupal():
                         "--site-mail", self.cfg["site"]["site-mail"],
                         "--site-name", self.cfg["site"]["site-name"],
                         ))
+    if cfg["config"] is not None:
+      os.makedirs(self.cfg["config"], exist_ok=True)
+      sstring = sstring + " --config-dir " + cfg["config"] 
     p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
     if(p.returncode == 0):
       print("Core enabled")
     else:
       print(p)
+  
+  def actionPackage(self, packages, action):
+    if packages is not None:
+      for m in packages:
+        print("{} {}".format(action, m))
+        sstring = " ".join(("drush",
+                            "--yes",
+                            action,
+                            m
+                            ))
+        p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
+        if(p.returncode == 0):
+          print("{} {} OK".format(action, m))
+        else:
+          print(p)
+  
+  def enableModules(self):
+    print("Enabling modules")
+    self.actionPackage(cfg["module_enable"], "pm:enable")
+    print("Modules enabled")
+  
+  def disableModules(self):
+    print("Disabling modules")
+    self.actionPackage(cfg["module_disable"], "pm:uninstall")
+    print("Modules disabled")
+
+  def enableThemes(self):
+    print("Enabling themes")
+    self.actionPackage(cfg["theme_enable"], "theme:enable")
+    print("Themes enabled")
+
+  def disableThemes(self):
+    print("Disabling themes")
+    self.actionPackage(cfg["theme_disable"], "theme:uninstall")
+    print("Themes disabled")
+    
+  # TODO avoid code duplication in setDefaultTheme() and setAdminTheme()
+  def setDefaultTheme(self):
+    if cfg["theme_default"] is not None:
+      print("Setting default theme to {}".format(cfg["theme_default"]))
+      sstring = " ".join(("drush",
+                          "--yes",
+                          "config:set",
+                          "system.theme",
+                          "default",
+                          cfg["theme_default"]
+                          ))
+      p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
+      if(p.returncode == 0):
+        print("Default theme set to {}".format(cfg["theme_default"]))
+      else:
+        print(p)
+  
+  def setAdminTheme(self):
+    if cfg["theme_admin"] is not None:
+      print("Setting admin theme to {}".format(cfg["theme_admin"]))
+      sstring = " ".join(("drush",
+                          "--yes",
+                          "config:set",
+                          "system.theme",
+                          "admin",
+                          cfg["theme_admin"]
+                          ))
+      p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
+      if(p.returncode == 0):
+        print("Admin theme set to {}".format(cfg["theme_admin"]))
+      else:
+        print(p)
 
   def SaveProject(self, component):
     if(self.cfg["base"] == 9):
@@ -280,7 +351,7 @@ class Drupal():
   def enableProjects(self, component):
     if self.cfg.get("modules", None) is not None:
       mod = ",".join(self.cfg["modules"])
-      sstring = " ".join(["drush", "en", mod])
+      sstring = " ".join(["drush", "pm:enable", mod])
       p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
       if(p.returncode == 0):
         print("Projects OK")
@@ -480,7 +551,7 @@ class Drupal():
           # TODO improve reporting permission errors
           print("PermissionError, check if everything has correct ownership")
     print("Rebuilding cache")
-    p = subprocess.run("drush cr", cwd=self.cfg["path"], shell=True, check=True)
+    p = subprocess.run("drush cache:rebuild", cwd=self.cfg["path"], shell=True, check=True)
     if(p.returncode == 0):
       print("Rebuilding cache OK")
     else:
@@ -535,8 +606,12 @@ if __name__ == "__main__":
                         help='db info')
   parser.add_argument('-c', '--config',
                         dest='config',
+                        metavar='DIR',
+                        help='path drupal yaml configuration')
+  parser.add_argument(
+                        dest='settings',
                         metavar='FILE',
-                        help='path to yaml config file')
+                        help='path to yaml settings file')
   parser.add_argument('-i', '--repo',
                         dest='repo',
                         metavar='REPO',
@@ -554,7 +629,7 @@ if __name__ == "__main__":
                         type=str.lower,
                         help='action [download (just download), install (install modules and themes from tar), composer (install modules and themes with composer)] ')
   parser.add_argument('-e', '--enable',
-                        dest='enable_projects',
+                        dest='projects_enable',
                         action='store_true',
                         help='enable modules')
   parser.add_argument('-k', '--check',
@@ -566,8 +641,8 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
 
-  config = args.config
-  with open(config) as y:
+  settings = args.settings
+  with open(settings) as y:
     cfg = yaml.load(y, Loader=yaml.FullLoader)
 
   cfg["base"] = cfg.get("base", None) if args.base is None else args.base
@@ -578,9 +653,18 @@ if __name__ == "__main__":
   cfg["path"] = cfg.get("path", None) if args.path is None else args.path
   cfg["repo"] = cfg.get("repo", None) if args.repo is None else args.repo
   cfg["workdir"] = cfg.get("workdir", None) if args.workdir is None else args.workdir
+  cfg["config"] = cfg.get("config", None) if args.config is None else args.config
   cfg["drush"] = cfg.get("drush", None) if args.drush is None else args.drush
   cfg["check"] = cfg.get("check", None) if args.check is None else args.check
-  cfg["enable_projects"] = cfg.get("enable_projects", None) if args.enable_projects is None else args.enable_projects
+  cfg["projects_enable"] = cfg.get("projects_enable", None) if args.projects_enable is None else args.projects_enable
+  
+  cfg["module_enable"] = cfg.get("module_enable", None)
+  cfg["theme_enable"] = cfg.get("theme_enable", None)
+  cfg["module_disable"] = cfg.get("module_disable", None)
+  cfg["theme_disable"] = cfg.get("thene_disable", None)
+  
+  cfg["theme_default"] = cfg.get("theme_default", None)
+  cfg["theme_admin"] = cfg.get("theme_admin", None)
 
   cfg["action"] = cfg.get("action", None) if args.action is None else args.action
   action = cfg["action"]
@@ -620,7 +704,7 @@ if __name__ == "__main__":
     d.enableCore()
     d.installProjects("modules")
     d.installProjects("themes")
-    if(cfg["enable_projects"]):
+    if(cfg["projects_enable"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
   elif(action == 'composer'):
@@ -630,7 +714,7 @@ if __name__ == "__main__":
     d.enableCore()
     d.composerProjects("modules")
     d.composerProjects("themes")
-    if(cfg["enable_projects"]):
+    if(cfg["projects_enable"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
   elif(action == 'wipe'):
@@ -640,6 +724,13 @@ if __name__ == "__main__":
   if (action not in notinstalled):
     if(cfg["check"]):
       d.DrupalCheck()
+    # TODO if enabling/disabling stuff drush have to be installed
+    d.enableModules()
+    d.disableModules()
+    d.enableThemes()
+    d.setDefaultTheme()
+    d.setAdminTheme()
+    d.disableThemes()
     d.Setup()
 
   print("FINISH")
