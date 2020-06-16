@@ -4,7 +4,8 @@ This script automate:
 * installing local Drush in Drupal directory
 * installing Drupal via Drush
 * install modules and themes
-* TODO enable modules and themes
+* enable modules and themes
+* set default and admin theme
 * install drupal-check
 
 It can simply download and unpack modules in the right place.
