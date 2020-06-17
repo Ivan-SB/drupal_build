@@ -661,7 +661,7 @@ if __name__ == "__main__":
   cfg["module_enable"] = cfg.get("module_enable", None)
   cfg["theme_enable"] = cfg.get("theme_enable", None)
   cfg["module_disable"] = cfg.get("module_disable", None)
-  cfg["theme_disable"] = cfg.get("thene_disable", None)
+  cfg["theme_disable"] = cfg.get("theme_disable", None)
   
   cfg["theme_default"] = cfg.get("theme_default", None)
   cfg["theme_admin"] = cfg.get("theme_admin", None)
