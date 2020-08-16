@@ -21,3 +21,5 @@ It uses a yaml configuration file whose entries can be overwritten by command li
 It automatically chose the latest available release (stable or dev) for the specified version of Drupal
 
 It support an "internal" repo
+
+drush theme:uninstall stark return an error even if theme is correctly uninstalled but prevent script to terminate correctly.

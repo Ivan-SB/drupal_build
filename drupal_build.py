@@ -127,7 +127,7 @@ class Drupal():
   def getRefs(self, repo, refsfilter):
     a = {}
     va = []
-    refs = g.ls_remote(repo).split('\n')
+    refs = g.ls_remote(repo, refs=True).split('\n')
     for ref in refs:
       refsmatch = re.search(refsfilter, ref)
       if(refsmatch is not None):
@@ -309,9 +309,13 @@ class Drupal():
           file = None
         elif(m[1]=='i'):
 #           get heads
+# FIXME if there are no branches/tags switch to master
           dmrepo = cfg["repo"] + m[0] + '.git'
           dcomponents = self.getRefs(dmrepo, dmbranches_re)
           dcomponentsf = self.gitFilter(dcomponents, base)
+          file = None
+        elif(m[1]=='c'):
+          dcomponentsf = [[0] for _ in range(1)]
           file = None
         print("{} {}".format(m[0], dcomponentsf[-1][0]))
         yield {"name": m[0], "file": file, "git": m[1], "branch": dcomponentsf[-1][0]}
@@ -321,42 +325,21 @@ class Drupal():
   def SaveProjects(self, component):
     for _ in self.SaveProject(component):
       pass
-
-  def installProjects(self, component):
-    basepath = os.path.normpath(self.cfg["path"])
-    componentpath = os.path.join(basepath, component, "contrib")
-    for m in self.SaveProject(component):
-      repo = DPREPOSITORY.format(m["name"])
-      mdir = os.path.join(componentpath, m["name"])
-      if m["git"] == 'g':
-        print("shallow clone {}".format(m["name"]))
-        p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
-        if(p.returncode == 0):
-          print("Projects {} cloning OK".format(m["name"]))
-        else:
-          print(p)
-      elif (m["git"] == 'f' or m["git"] == 'i') :
-        print("full clone {}".format(m["name"]))
-        p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
-        if(p.returncode == 0):
-          print("Projects {} cloning OK".format(m["name"]))
-        else:
-          print(p)
-      else:
-        print("Unpacking project {}".format(m["name"]))
-        tar = tarfile.open(m['file'], 'r:gz')
-        tar.extractall(path=componentpath)
-        print("Project {} unpacked".format(m["name"]))
-
-  def enableProjects(self, component):
-    if self.cfg.get("modules", None) is not None:
-      mod = ",".join(self.cfg["modules"])
-      sstring = " ".join(["drush", "pm:enable", mod])
-      p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
-      if(p.returncode == 0):
-        print("Projects OK")
-      else:
-        print(p)
+    
+#   def composerPackages(self, packages):
+#     crequire = ["composer", "require"]
+#     cfgdir = os.path.join(self.cfg["path"], "sites", "default")
+#     pstring = ", ".join(packages)
+#     st_mode = os.stat(cfgdir).st_mode
+#     os.chmod(cfgdir, st_mode | stat.S_IWUSR)
+#     print("Installing packages {} via composer".format(pstring))
+#     crequire.extend(packages)
+#     p = subprocess.run(crequire, cwd=self.cfg["path"])
+#     if(p.returncode == 0):
+#       print("Composer packages {} OK".format(pstring))
+#     else:
+#       print(p)
+#     os.chmod(cfgdir, st_mode)
 
   def composerPackages(self, packages):
     crequire = ["composer", "require"]
@@ -383,6 +366,58 @@ class Drupal():
     if components is not None:
       packages = list(map(lambda m: "drupal/{}".format(m[0]), components))
       self.composerPackages(packages)
+
+  def composerPackage(self, package):
+    crequire = ["composer", "require", "drupal/" + package]
+    cfgdir = os.path.join(self.cfg["path"], "sites", "default")
+    st_mode = os.stat(cfgdir).st_mode
+    os.chmod(cfgdir, st_mode | stat.S_IWUSR)
+    print("Installing package {} via composer".format(package))
+    p = subprocess.run(crequire, cwd=self.cfg["path"])
+    if(p.returncode == 0):
+      print("Composer package {} OK".format(package))
+    else:
+      print(p)
+    os.chmod(cfgdir, st_mode)
+    
+
+  def installProjects(self, component):
+    basepath = os.path.normpath(self.cfg["path"])
+    componentpath = os.path.join(basepath, component, "contrib")
+    for m in self.SaveProject(component):
+      repo = DPREPOSITORY.format(m["name"])
+      mdir = os.path.join(componentpath, m["name"])
+      if m["git"] == 'g':
+        print("shallow clone {}".format(m["name"]))
+        p = subprocess.run(["git", "clone", "--depth", "1", "-b", m["branch"], repo, mdir])
+        if(p.returncode == 0):
+          print("Projects {} cloning OK".format(m["name"]))
+        else:
+          print(p)
+      elif (m["git"] == 'f' or m["git"] == 'i') :
+        print("full clone {}".format(m["name"]))
+        p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
+        if(p.returncode == 0):
+          print("Projects {} cloning OK".format(m["name"]))
+        else:
+          print(p)
+      elif m['git']=='c':
+        self.composerPackage(m["name"])
+      else:
+        print("Unpacking project {}".format(m["name"]))
+        tar = tarfile.open(m['file'], 'r:gz')
+        tar.extractall(path=componentpath)
+        print("Project {} unpacked".format(m["name"]))
+
+  def enableProjects(self, component):
+    if self.cfg.get("modules", None) is not None:
+      mod = ",".join(self.cfg["modules"])
+      sstring = " ".join(["drush", "pm:enable", mod])
+      p = subprocess.run(sstring, cwd=self.cfg["path"], shell=True, check=True)
+      if(p.returncode == 0):
+        print("Projects OK")
+      else:
+        print(p)
 
   def createConnectionPG(self):
     ssl = self.cfg["db_admin"].get("ssl", None)
