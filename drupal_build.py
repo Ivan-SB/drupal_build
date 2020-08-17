@@ -394,9 +394,12 @@ class Drupal():
           print("Projects {} cloning OK".format(m["name"]))
         else:
           print(p)
-      elif (m["git"] == 'f' or m["git"] == 'i') :
+      elif (m["git"] == 'f' or m["git"] == 'i'):
         print("full clone {}".format(m["name"]))
-        p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
+        if(m["git"] == 'f'):
+          p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
+        else:
+          p = subprocess.run(["git", "clone", "-b", m["branch"], cfg["repo"], mdir])
         if(p.returncode == 0):
           print("Projects {} cloning OK".format(m["name"]))
         else:
@@ -539,20 +542,22 @@ class Drupal():
     for r, d, f in os.walk(cfg["path"]):
       for ld in d:
         ldpath = os.path.join(r, ld)
-        ldpermissions = os.stat(ldpath).st_mode
-        try:
-          os.chmod(ldpath, ldpermissions | stat.S_IWUSR)
-        except PermissionError:
-          # TODO improve reporting permission errors
-          print("PermissionError, check if everything has been deleted")
+        if not os.path.islink(ldpath):
+          ldpermissions = os.stat(ldpath).st_mode
+          try:
+            os.chmod(ldpath, ldpermissions | stat.S_IWUSR)
+          except PermissionError:
+            # TODO improve reporting permission errors
+            print("PermissionError, check if everything has been deleted")
       for lf in f:
         lfpath = os.path.join(r, lf)
-        lfpermission = os.stat(lfpath).st_mode
-        try:
-          os.chmod(lfpath, lfpermission | stat.S_IWUSR)
-        except PermissionError:
-          # TODO improve reporting permission errors
-          print("PermissionError, check if everything has been deleted")
+        if not os.path.islink(lfpath):
+          lfpermission = os.stat(lfpath).st_mode
+          try:
+            os.chmod(lfpath, lfpermission | stat.S_IWUSR)
+          except PermissionError:
+            # TODO improve reporting permission errors
+            print("PermissionError, check if everything has been deleted")
     print("Removing files")
     shutil.rmtree(cfg["path"])
     print("Files removed")
@@ -573,18 +578,20 @@ class Drupal():
     for r, d, f in os.walk(cfg["path"]):
       for ld in d:
         ldpath = os.path.join(r, ld)
-        try:
-          os.chown(ldpath, uid, gid)
-        except PermissionError:
-          # TODO improve reporting permission errors
-          print("PermissionError, check if everything has correct ownership")
+        if not os.path.islink(ldpath):
+          try:
+            os.chown(ldpath, uid, gid)
+          except PermissionError:
+            # TODO improve reporting permission errors
+            print("PermissionError, check if everything has correct ownership")
       for lf in f:
         lfpath = os.path.join(r, lf)
-        try:
-          os.chown(lfpath, uid, gid)
-        except PermissionError:
-          # TODO improve reporting permission errors
-          print("PermissionError, check if everything has correct ownership")
+        if not os.path.islink(lfpath):
+          try:
+            os.chown(lfpath, uid, gid)
+          except PermissionError:
+            # TODO improve reporting permission errors
+            print("PermissionError, check if everything has correct ownership")
     print("Rebuilding cache")
     p = subprocess.run("drush cache:rebuild", cwd=self.cfg["path"], shell=True, check=True)
     if(p.returncode == 0):
