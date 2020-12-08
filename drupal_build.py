@@ -521,7 +521,7 @@ class Drupal():
       
   def dropUserMySQL(self, user):
     host = self.cfg["db"]["host"]
-    self.cur.execute("drop user if exists %s@%s", (user, host,))
+    self.cur.execute("drop user if exists %s@%s", (user, host))
   
   def dropUserPG(self, user):
 #     self.cur.execute("drop user if exists %s", (user,))
