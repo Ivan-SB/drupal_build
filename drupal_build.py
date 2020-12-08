@@ -399,7 +399,8 @@ class Drupal():
         if(m["git"] == 'f'):
           p = subprocess.run(["git", "clone", "-b", m["branch"], repo, mdir])
         else:
-          p = subprocess.run(["git", "clone", "-b", m["branch"], cfg["repo"], mdir])
+          # TODO find a better way to join git url 
+          p = subprocess.run(["git", "clone", "-b", m["branch"], cfg["repo"] + m["name"] + '.git', mdir])
         if(p.returncode == 0):
           print("Projects {} cloning OK".format(m["name"]))
         else:
@@ -448,10 +449,11 @@ class Drupal():
   def createConnectionMySQL(self):
     print('DB superuser credentials')
     pwd = getpass.getpass(prompt='Password for user: ')
+#     ssl = self.cfg["db_admin"].get("ssl", None)
     self.conn = MySQLdb.connect(host=self.cfg["db_admin"]["host"],
                                 user=self.cfg["db_admin"]["user"],
                                 passwd=pwd,
-                                ssl=self.cfg["db_admin"].get("ssl", None)
+#                                 ssl=self.cfg["db_admin"].get("ssl", None)
                               )
     self.cur = self.conn.cursor()
 
@@ -538,6 +540,8 @@ class Drupal():
     print("DB cleaned up")
 
   def cleanupDir(self):
+    # TODO if directory where drupal was unpacked has not been deleted this causes errors
+    # unpacking over an existing dir
     print("Changing permissions")
     for r, d, f in os.walk(cfg["path"]):
       for ld in d:
@@ -743,9 +747,9 @@ if __name__ == "__main__":
     d.setupDB()
     d.installCore()
     d.Drush()
-    d.enableCore()
     d.installProjects("modules")
     d.installProjects("themes")
+    d.enableCore()
     if(cfg["projects_enable"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
@@ -753,9 +757,9 @@ if __name__ == "__main__":
     d.setupDB()
     d.installCore()
     d.Drush()
-    d.enableCore()
     d.composerProjects("modules")
     d.composerProjects("themes")
+    d.enableCore()
     if(cfg["projects_enable"]):
       d.enableProjects("modules")
       d.enableProjects("themes")
