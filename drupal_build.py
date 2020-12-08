@@ -534,7 +534,7 @@ class Drupal():
     db = self.cfg["db"]["db"]
     self.cur.execute('drop database if exists {};'.format(db))
     if (self.cfg["db"]["driver"] == "mysql"):
-      self.dropUserMySQL(self, user)
+      self.dropUserMySQL(user)
     elif (self.cfg["db"]["driver"] == "pgsql"):
       self.dropUserPG(user)
     print("DB cleaned up")
