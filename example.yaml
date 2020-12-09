@@ -7,7 +7,7 @@ repo: BASEURL # for internal repo (assume ssh and key with no password or ssh-ag
 db_admin:
    user: USER
    host: HOST
-   passwd: OTHERWISEREQUESTED
+   passwd: OTHERWISEREQUESTED # if None use local auth/no password, if absent ask 
    ssl:
       key: /PATHTO/mysql-client.key
       cert: /PATHTO/mysql-client.pem
