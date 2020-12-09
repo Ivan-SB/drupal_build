@@ -424,10 +424,10 @@ class Drupal():
         print(p)
 
   def createConnectionPG(self):
-    ssl = self.cfg["db_admin"].get("ssl", None)
 #     print('DB superuser credentials')
 #     pwd = getpass.getpass(prompt='Password for user: ')
 #     pwd = None
+    ssl = self.cfg["db_admin"].get("ssl", None)
     if ssl is not None:
       key = ssl.get("key", None)
       cert = ssl.get("cert", None)
@@ -447,14 +447,22 @@ class Drupal():
     self.cur = self.conn.cursor()
 
   def createConnectionMySQL(self):
-    print('DB superuser credentials')
-    pwd = getpass.getpass(prompt='Password for user: ')
-#     ssl = self.cfg["db_admin"].get("ssl", None)
-    self.conn = MySQLdb.connect(host=self.cfg["db_admin"]["host"],
-                                user=self.cfg["db_admin"]["user"],
-                                passwd=pwd,
-#                                 ssl=self.cfg["db_admin"].get("ssl", None)
-                              )
+    conn_args = {
+        'host': self.cfg["db_admin"]["host"],
+        'user': cfg["db_admin"]["user"]
+      }
+    if 'passwd' in self.cfg["db_admin"]:
+      pwd = self.cfg["db_admin"].get("passwd", None)
+      if pwd is not None:
+        conn_args['passwd'] = pwd
+    else:
+      print('DB superuser credentials')
+      pwd = getpass.getpass(prompt='Password for user: ')
+      conn_args['passwd'] = pwd
+    ssl = self.cfg["db_admin"].get("ssl", None)
+    if ssl is not None:
+      conn_args['ssl'] = ssl 
+    self.conn = MySQLdb.connect(**conn_args)
     self.cur = self.conn.cursor()
 
   def createConnection(self):
@@ -540,6 +548,7 @@ class Drupal():
     print("DB cleaned up")
 
   def cleanupDir(self):
+    # TODO if dir already deleted avoid error
     # TODO if directory where drupal was unpacked has not been deleted this causes errors
     # unpacking over an existing dir
     print("Changing permissions")
