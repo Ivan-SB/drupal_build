@@ -367,6 +367,7 @@ class Drupal():
       packages = list(map(lambda m: "drupal/{}".format(m[0]), components))
       self.composerPackages(packages)
 
+  # TODO not really neded, character in list to specify if install, internal, composer 
   def composerPackage(self, package):
     crequire = ["composer", "require", "drupal/" + package]
     cfgdir = os.path.join(self.cfg["path"], "sites", "default")
@@ -379,7 +380,6 @@ class Drupal():
     else:
       print(p)
     os.chmod(cfgdir, st_mode)
-    
 
   def installProjects(self, component):
     basepath = os.path.normpath(self.cfg["path"])
@@ -572,7 +572,10 @@ class Drupal():
             # TODO improve reporting permission errors
             print("PermissionError, check if everything has been deleted")
     print("Removing files")
-    shutil.rmtree(cfg["path"])
+    try:
+      shutil.rmtree(cfg["path"])
+    except FileNotFoundError:
+      print("Files already removed")
     print("Files removed")
 
   def Cleanup(self):
